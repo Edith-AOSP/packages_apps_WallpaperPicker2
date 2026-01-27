@@ -89,6 +89,30 @@ class SecureSettingsRepositoryImpl(
             .flowOn(backgroundDispatcher)
     }
 
+    override fun stringSetting(name: String): Flow<String?> {
+        return callbackFlow {
+                val observer =
+                    object : ContentObserver(null) {
+                        override fun onChange(selfChange: Boolean) {
+                            trySend(Unit)
+                        }
+                    }
+
+                contentResolver.registerContentObserver(
+                    Settings.Secure.getUriFor(name),
+                    /* notifyForDescendants= */ false,
+                    observer,
+                )
+                send(Unit)
+
+                awaitClose { contentResolver.unregisterContentObserver(observer) }
+            }
+            .map { Settings.Secure.getString(contentResolver, name) }
+            // The above work is done on the background thread (which is important for accessing
+            // settings through the content resolver).
+            .flowOn(backgroundDispatcher)
+    }
+
     override suspend fun setInt(name: String, value: Int) {
         withContext(backgroundDispatcher) { Settings.Secure.putInt(contentResolver, name, value) }
     }
