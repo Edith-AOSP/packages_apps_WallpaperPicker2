@@ -21,6 +21,7 @@ import android.app.ComponentCaller
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
+import android.graphics.Color
 import android.os.Bundle
 import android.util.Log
 import android.widget.FrameLayout
@@ -134,6 +135,10 @@ class CustomizationPickerActivity :
         ColorUpdateBinder.bind(
             setColor = { color ->
                 requireViewById<FrameLayout>(R.id.fragment_container).setBackgroundColor(color)
+                window.statusBarColor = color
+                window.setStatusBarContrastEnforced(false)
+                WindowCompat.getInsetsController(window, window.decorView)
+                    .isAppearanceLightStatusBars = Color.luminance(color) > 0.5
             },
             color = colorUpdateViewModel.colorSurfaceContainer,
             shouldAnimate = {
