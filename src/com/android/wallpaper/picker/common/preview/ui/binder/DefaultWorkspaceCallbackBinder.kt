@@ -37,7 +37,7 @@ class DefaultWorkspaceCallbackBinder @Inject constructor() : WorkspaceCallbackBi
         lifecycleOwner: LifecycleOwner,
     ) {}
 
-    override fun unbind() {}
+    override fun unbind(screen: Screen) {}
 
     companion object {
         const val MESSAGE_ID_DESTROY_PREVIEW = 0

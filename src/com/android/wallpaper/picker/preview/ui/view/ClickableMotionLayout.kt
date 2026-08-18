@@ -23,6 +23,7 @@ import android.util.Log
 import android.view.GestureDetector
 import android.view.GestureDetector.SimpleOnGestureListener
 import android.view.MotionEvent
+import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.ViewParent
 import androidx.annotation.IdRes
@@ -48,6 +49,7 @@ class ClickableMotionLayout(context: Context, attrs: AttributeSet?) : MotionLayo
     private var isAtRightBoundary = true
 
     private var startX = 0f
+    private var startY = 0f
     private var lastX = 0f
 
     private val TAG = "ClickableMotionLayout"
@@ -158,6 +160,7 @@ class ClickableMotionLayout(context: Context, attrs: AttributeSet?) : MotionLayo
             MotionEvent.ACTION_DOWN -> {
                 // resent tracking variables
                 startX = event.x
+                startY = event.y
                 lastX = event.x
                 isDragging = false
             }
@@ -168,7 +171,15 @@ class ClickableMotionLayout(context: Context, attrs: AttributeSet?) : MotionLayo
 
                 isDragging = true
 
-                if (!edgeTransitionInProgress) {
+                val totalDeltaX = event.x - startX
+                val totalDeltaY = event.y - startY
+                val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+                val isHorizontalDrag =
+                    shouldInterceptTouch &&
+                        Math.abs(totalDeltaX) > touchSlop &&
+                        Math.abs(totalDeltaX) > Math.abs(totalDeltaY)
+
+                if (!edgeTransitionInProgress && isHorizontalDrag) {
                     // Check for edge overscroll attempts
                     if (isAtLeftBoundary && deltaX > 0) {
                         // Swiping right when already at left boundary (lock preview)

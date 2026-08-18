@@ -21,7 +21,9 @@
     <Transition
         android:id="@+id/transition_primary"
         app:constraintSetStart="@id/expanded_header_primary"
-        app:constraintSetEnd="@id/collapsed_header_primary">
+        app:constraintSetEnd="@id/collapsed_header_primary"
+        app:duration="400"
+        app:motionInterpolator="cubic(0.2, 0, 0, 1)">
 
         <OnSwipe
             app:dragDirection="dragUp"
@@ -29,6 +31,34 @@
             app:touchAnchorId="@+id/bottom_scroll_view"
             app:touchAnchorSide="top" />
     </Transition>
+
+    <Transition
+        android:id="@+id/transition_secondary"
+        app:constraintSetStart="@id/expanded_header_primary"
+        app:constraintSetEnd="@id/secondary"
+        app:duration="400"
+        app:motionInterpolator="cubic(0.2, 0, 0, 1)" />
+
+    <Transition
+        android:id="@+id/transition_secondary_back"
+        app:constraintSetStart="@id/secondary"
+        app:constraintSetEnd="@id/expanded_header_primary"
+        app:duration="400"
+        app:motionInterpolator="cubic(0.2, 0, 0, 1)" />
+
+    <Transition
+        android:id="@+id/transition_secondary_from_collapsed"
+        app:constraintSetStart="@id/collapsed_header_primary"
+        app:constraintSetEnd="@id/secondary"
+        app:duration="400"
+        app:motionInterpolator="cubic(0.2, 0, 0, 1)" />
+
+    <Transition
+        android:id="@+id/transition_secondary_to_collapsed"
+        app:constraintSetStart="@id/secondary"
+        app:constraintSetEnd="@id/collapsed_header_primary"
+        app:duration="400"
+        app:motionInterpolator="cubic(0.2, 0, 0, 1)" />
 
     <ConstraintSet android:id="@+id/expanded_header_primary">
 

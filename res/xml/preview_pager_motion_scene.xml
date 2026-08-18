@@ -24,7 +24,8 @@
         android:id="@+id/preview_swipe_transition"
         app:constraintSetStart="@id/lock_preview_selected"
         app:constraintSetEnd="@id/home_preview_selected"
-        app:duration="200" />
+        app:duration="200"
+        app:motionInterpolator="cubic(0.2, 0, 0, 1)" />
 
     <Transition
         android:id="@+id/lock_preview_shuffle_transition"

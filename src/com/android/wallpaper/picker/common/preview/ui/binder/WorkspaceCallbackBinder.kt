@@ -40,10 +40,10 @@ interface WorkspaceCallbackBinder {
     )
 
     /**
-     * Unbind the current binder. This method should be called when the lifecycle of the caller is
-     * destroyed.
+     * Unbind the bindings for the given [screen]. This method should be called when the surface of
+     * the caller is destroyed.
      */
-    fun unbind()
+    fun unbind(screen: Screen)
 
     companion object {
         fun Message.sendMessage(what: Int, data: Bundle) {
