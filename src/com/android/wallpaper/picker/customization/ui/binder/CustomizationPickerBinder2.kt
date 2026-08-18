@@ -42,9 +42,7 @@ import com.android.wallpaper.picker.customization.ui.viewmodel.CustomizationPick
 import com.android.wallpaper.picker.customization.ui.viewmodel.CustomizationPickerViewModel2.PickerScreen.MAIN
 import com.android.wallpaper.picker.data.WallpaperModel
 import com.android.wallpaper.picker.data.category.CategoryModel
-import com.android.wallpaper.picker.preview.ui.view.ClickableMotionLayout
 import com.android.wallpaper.util.CuratedPhotosTimeUtil
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
 object CustomizationPickerBinder2 {
@@ -86,65 +84,7 @@ object CustomizationPickerBinder2 {
             view.requireViewById(R.id.lock_customization_option_container)
         val homeCustomizationOptionContainer: LinearLayout =
             view.requireViewById(R.id.home_customization_option_container)
-        val previewPager: ClickableMotionLayout = view.requireViewById(R.id.preview_pager)
-        val lockPreview: View = previewPager.requireViewById(R.id.lock_preview)
-        val homePreview: View = previewPager.requireViewById(R.id.home_preview)
         val showDesktopUi = BaseFlags.get(view.context).shouldShowDesktopUi(view.context)
-
-        fun setPreviewSurfacesVisibility(preview: View, visibility: Int) {
-            preview.requireViewById<View>(R.id.wallpaper_surface).visibility = visibility
-            preview.requireViewById<View>(R.id.workspace_surface).visibility = visibility
-        }
-
-        previewPager.setOnTransitionCompleted { currentId ->
-            when (currentId) {
-                R.id.lock_preview_centered -> {
-                    setPreviewSurfacesVisibility(homePreview, View.INVISIBLE)
-                    setPreviewSurfacesVisibility(lockPreview, View.VISIBLE)
-                }
-                R.id.home_preview_centered -> {
-                    setPreviewSurfacesVisibility(lockPreview, View.INVISIBLE)
-                    setPreviewSurfacesVisibility(homePreview, View.VISIBLE)
-                }
-                R.id.lock_preview_selected,
-                R.id.home_preview_selected -> {
-                    setPreviewSurfacesVisibility(lockPreview, View.VISIBLE)
-                    setPreviewSurfacesVisibility(homePreview, View.VISIBLE)
-                    lockPreview.alpha = 1f
-                    homePreview.alpha = 1f
-                }
-            }
-            val screen =
-                when (currentId) {
-                    R.id.lock_preview_selected -> LOCK_SCREEN
-                    R.id.home_preview_selected -> HOME_SCREEN
-                    else -> return@setOnTransitionCompleted
-                }
-            viewModel.selectPreviewScreen(screen)
-        }
-
-        if (!showDesktopUi) {
-            previewPager.setOnTransitionChanged { startId, endId, progress ->
-                val isOpeningLock = endId == R.id.lock_preview_centered
-                val isOpeningHome = endId == R.id.home_preview_centered
-                val isClosing =
-                    endId == R.id.lock_preview_selected || endId == R.id.home_preview_selected
-                if (isOpeningLock || isOpeningHome) {
-                    if (progress >= 0.38f) {
-                        if (isOpeningLock) setPreviewSurfacesVisibility(homePreview, View.INVISIBLE)
-                        else setPreviewSurfacesVisibility(lockPreview, View.INVISIBLE)
-                    } else {
-                        setPreviewSurfacesVisibility(lockPreview, View.VISIBLE)
-                        setPreviewSurfacesVisibility(homePreview, View.VISIBLE)
-                    }
-                } else if (isClosing && progress >= 0.38f) {
-                    setPreviewSurfacesVisibility(lockPreview, View.VISIBLE)
-                    setPreviewSurfacesVisibility(homePreview, View.VISIBLE)
-                    lockPreview.alpha = 1f
-                    homePreview.alpha = 1f
-                }
-            }
-        }
 
         lifecycleOwner.lifecycleScope.launch {
             lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -162,54 +102,18 @@ object CustomizationPickerBinder2 {
                 }
 
                 launch {
-                    combine(viewModel.selectedPreviewScreen, viewModel.screen) {
-                            selectedScreen,
-                            pickerScreen ->
-                            selectedScreen to pickerScreen.first
-                        }
-                        .collect { (selectedScreen, pickerScreen) ->
-                            if (
-                                !showDesktopUi &&
-                                    pickerScreen == MAIN &&
-                                    (previewPager.currentState == R.id.lock_preview_selected ||
-                                        previewPager.currentState == R.id.home_preview_selected)
-                            ) {
-                                setPreviewSurfacesVisibility(lockPreview, View.VISIBLE)
-                                setPreviewSurfacesVisibility(homePreview, View.VISIBLE)
-                                lockPreview.alpha = 1f
-                                homePreview.alpha = 1f
+                    viewModel.selectedPreviewScreen.collect { selectedScreen ->
+                        when (selectedScreen) {
+                            LOCK_SCREEN -> {
+                                lockCustomizationOptionContainer.isInvisible = false
+                                homeCustomizationOptionContainer.isInvisible = true
                             }
-                            val targetState =
-                                when {
-                                    !showDesktopUi && pickerScreen == CUSTOMIZATION_OPTION ->
-                                        when (selectedScreen) {
-                                            LOCK_SCREEN -> R.id.lock_preview_centered
-                                            HOME_SCREEN -> R.id.home_preview_centered
-                                        }
-                                    else ->
-                                        when (selectedScreen) {
-                                            LOCK_SCREEN -> R.id.lock_preview_selected
-                                            HOME_SCREEN -> R.id.home_preview_selected
-                                        }
-                                }
-                            if (previewPager.currentState != targetState) {
-                                previewPager.transitionToState(
-                                    targetState,
-                                    PREVIEW_TRANSITION_DURATION,
-                                )
-                            }
-
-                            when (selectedScreen) {
-                                LOCK_SCREEN -> {
-                                    lockCustomizationOptionContainer.isInvisible = false
-                                    homeCustomizationOptionContainer.isInvisible = true
-                                }
-                                HOME_SCREEN -> {
-                                    lockCustomizationOptionContainer.isInvisible = true
-                                    homeCustomizationOptionContainer.isInvisible = false
-                                }
+                            HOME_SCREEN -> {
+                                lockCustomizationOptionContainer.isInvisible = true
+                                homeCustomizationOptionContainer.isInvisible = false
                             }
                         }
+                    }
                 }
             }
         }
@@ -243,6 +147,4 @@ object CustomizationPickerBinder2 {
             iconStyleViewUtil,
         )
     }
-
-    private const val PREVIEW_TRANSITION_DURATION = 360
 }

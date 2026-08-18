@@ -27,6 +27,7 @@ import com.android.wallpaper.config.BaseFlags
 import com.android.wallpaper.model.Screen.HOME_SCREEN
 import com.android.wallpaper.model.Screen.LOCK_SCREEN
 import com.android.wallpaper.picker.customization.ui.util.ViewAlphaAnimator.animateToAlpha
+import com.android.wallpaper.picker.customization.ui.view.PreviewPagerViews
 import com.android.wallpaper.picker.customization.ui.viewmodel.CustomizationPickerViewModel2
 import com.android.wallpaper.picker.preview.ui.view.ClickableMotionLayout
 import kotlinx.coroutines.launch
@@ -39,20 +40,19 @@ import kotlinx.coroutines.launch
 object PreviewAlphaAnimationBinder {
 
     fun bind(
-        previewPager: ClickableMotionLayout,
+        previewPagerViews: PreviewPagerViews,
         viewModel: CustomizationPickerViewModel2,
         lifecycleOwner: LifecycleOwner,
     ) {
-        val lockPreview: View = previewPager.requireViewById(R.id.lock_preview)
-        val lockPreviewLabel: TextView = previewPager.requireViewById(R.id.lock_preview_label)
-        val lockPreviewLabelContainer: View =
-            previewPager.requireViewById(R.id.lock_preview_label_container)
-        val lockPreviewShade: View = lockPreview.requireViewById(R.id.preview_shade)
-        val homePreview: View = previewPager.requireViewById(R.id.home_preview)
-        val homePreviewLabel: TextView = previewPager.requireViewById(R.id.home_preview_label)
-        val homePreviewLabelContainer: View =
-            previewPager.requireViewById(R.id.home_preview_label_container)
-        val homePreviewShade: View = homePreview.requireViewById(R.id.preview_shade)
+        val previewPager = previewPagerViews.previewPager
+        val lockPreview: View = previewPagerViews.lockPreview
+        val lockPreviewLabel: TextView = previewPagerViews.lockPreviewLabel
+        val lockPreviewLabelContainer: View = previewPagerViews.lockPreviewLabelContainer
+        val lockPreviewShade: View = previewPagerViews.lockPreviewShade
+        val homePreview: View = previewPagerViews.homePreview
+        val homePreviewLabel: TextView = previewPagerViews.homePreviewLabel
+        val homePreviewLabelContainer: View = previewPagerViews.homePreviewLabelContainer
+        val homePreviewShade: View = previewPagerViews.homePreviewShade
         val showDesktopUi =
             BaseFlags.get(previewPager.context).shouldShowDesktopUi(previewPager.context)
 
@@ -64,13 +64,14 @@ object PreviewAlphaAnimationBinder {
                         val labelAlpha = if (showLabel) alpha else 0f
                         val labelVisibility = if (showLabel) View.VISIBLE else View.GONE
                         if (showDesktopUi) {
+                            val motionLayout = previewPager as ClickableMotionLayout
                             if (showLabel) {
-                                previewPager.addClickableViewId(R.id.lock_preview_label_container)
+                                motionLayout.addClickableViewId(R.id.lock_preview_label_container)
                                 lockPreviewLabelContainer.setOnClickListener {
                                     viewModel.selectPreviewScreen(LOCK_SCREEN)
                                 }
                             } else {
-                                previewPager.removeClickableViewId(
+                                motionLayout.removeClickableViewId(
                                     R.id.lock_preview_label_container
                                 )
                                 lockPreviewLabelContainer.setOnClickListener(null)
@@ -96,13 +97,14 @@ object PreviewAlphaAnimationBinder {
                         val labelAlpha = if (showLabel) alpha else 0f
                         val labelVisibility = if (showLabel) View.VISIBLE else View.GONE
                         if (showDesktopUi) {
+                            val motionLayout = previewPager as ClickableMotionLayout
                             if (showLabel) {
-                                previewPager.addClickableViewId(R.id.home_preview_label_container)
+                                motionLayout.addClickableViewId(R.id.home_preview_label_container)
                                 homePreviewLabelContainer.setOnClickListener {
                                     viewModel.selectPreviewScreen(HOME_SCREEN)
                                 }
                             } else {
-                                previewPager.removeClickableViewId(
+                                motionLayout.removeClickableViewId(
                                     R.id.home_preview_label_container
                                 )
                                 homePreviewLabelContainer.setOnClickListener(null)

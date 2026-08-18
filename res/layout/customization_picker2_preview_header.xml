@@ -25,88 +25,10 @@
     android:paddingBottom="@dimen/customization_picker_preview_compact_bottom_padding"
     tools:ignore="MergeRootFrame">
 
-    <com.android.wallpaper.picker.preview.ui.view.ClickableMotionLayout
+    <androidx.compose.ui.platform.ComposeView
         android:id="@+id/preview_pager"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        app:layoutDescription="@xml/preview_pager_motion_scene">
-
-        <TextView
-            android:id="@+id/label_placeholder"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:paddingBottom="@dimen/customization_picker_preview_label_padding_bottom"
-            android:visibility="invisible"
-            android:text="Placeholder for the previews to position below it"
-            android:maxLines="1"
-            android:ellipsize="end"
-            tools:ignore="HardcodedText" />
-
-        <FrameLayout
-            android:id="@+id/lock_preview_label_container"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingBottom="@dimen/customization_picker_preview_label_padding_bottom">
-
-            <TextView
-                android:id="@+id/lock_preview_label"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center"
-                android:layout_gravity="center"
-                android:textColor="@color/system_on_surface"
-                android:maxLines="1"
-                android:ellipsize="end"
-                android:text="@string/lock_screen_tab"
-                android:importantForAccessibility="no"/>
-        </FrameLayout>
-
-        <include layout="@layout/wallpaper_preview_card2"
-            android:id="@+id/lock_preview" />
-
-        <FrameLayout
-            android:id="@+id/home_preview_label_container"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingBottom="@dimen/customization_picker_preview_label_padding_bottom">
-
-            <TextView
-                android:id="@+id/home_preview_label"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center"
-                android:layout_gravity="center"
-                android:textColor="@color/system_on_surface"
-                android:maxLines="1"
-                android:ellipsize="end"
-                android:text="@string/home_screen_tab"
-                android:importantForAccessibility="no"/>
-        </FrameLayout>
-
-        <include layout="@layout/wallpaper_preview_card2"
-            android:id="@+id/home_preview" />
-
-        <androidx.constraintlayout.widget.Guideline
-            android:id="@+id/guideline_center"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            app:layout_constraintGuide_percent="0.5" />
-
-        <androidx.constraintlayout.widget.Guideline
-            android:id="@+id/guideline_center_start"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            app:layout_constraintGuide_percent="0.25" />
-
-        <androidx.constraintlayout.widget.Guideline
-            android:id="@+id/guideline_center_end"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            app:layout_constraintGuide_percent="0.75" />
-    </com.android.wallpaper.picker.preview.ui.view.ClickableMotionLayout>
+        android:layout_height="match_parent" />
 
     <View
         android:id="@+id/clock_face_click_delegate"

@@ -320,8 +320,7 @@
             app:layout_constraintTop_toTopOf="parent"
             app:layout_constraintBottom_toTopOf="@+id/lock_preview"
             app:layout_constraintStart_toStartOf="@+id/lock_preview"
-            app:layout_constraintEnd_toEndOf="@+id/lock_preview"
-            app:layout_constraintVertical_chainStyle="packed" />
+            app:layout_constraintEnd_toEndOf="@+id/lock_preview" />
 
         <Constraint
             android:id="@+id/lock_preview"
@@ -333,7 +332,6 @@
             app:layout_constrainedWidth="true"
             app:layout_constrainedHeight="true"
             app:layout_constraintTop_toBottomOf="@+id/lock_preview_label_container"
-            app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintStart_toStartOf="@+id/guideline_center_start"
             app:layout_constraintEnd_toEndOf="@+id/guideline_center_end" />
 
@@ -413,8 +411,7 @@
             app:layout_constraintTop_toTopOf="parent"
             app:layout_constraintBottom_toTopOf="@+id/home_preview"
             app:layout_constraintStart_toStartOf="@+id/home_preview"
-            app:layout_constraintEnd_toEndOf="@+id/home_preview"
-            app:layout_constraintVertical_chainStyle="packed" />
+            app:layout_constraintEnd_toEndOf="@+id/home_preview" />
 
         <Constraint
             android:id="@+id/home_preview"
@@ -426,7 +423,6 @@
             app:layout_constrainedWidth="true"
             app:layout_constrainedHeight="true"
             app:layout_constraintTop_toBottomOf="@+id/home_preview_label_container"
-            app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintStart_toStartOf="@+id/guideline_center_start"
             app:layout_constraintEnd_toEndOf="@+id/guideline_center_end" />
     </ConstraintSet>

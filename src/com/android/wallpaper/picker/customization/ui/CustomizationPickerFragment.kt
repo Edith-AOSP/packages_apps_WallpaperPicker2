@@ -34,11 +34,15 @@ import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityNodeProvider
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.TextView
 import android.widget.Toolbar
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.addCallback
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.constraintlayout.motion.widget.MotionLayout
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.constraintlayout.widget.ConstraintSet
@@ -83,6 +87,7 @@ import com.android.wallpaper.picker.customization.ui.binder.DarkModeUpdateBinder
 import com.android.wallpaper.picker.customization.ui.binder.PackThemeSuggestedEntryBinder
 import com.android.wallpaper.picker.customization.ui.binder.PreviewPagerBinder
 import com.android.wallpaper.picker.customization.ui.binder.ToolbarBinder
+import com.android.wallpaper.picker.customization.ui.compose.PreviewPagerCompose
 import com.android.wallpaper.picker.customization.ui.util.CustomizationOptionUtil
 import com.android.wallpaper.picker.customization.ui.util.CustomizationOptionUtil.CustomizationOption
 import com.android.wallpaper.picker.customization.ui.util.CustomizationOptionViewUtil
@@ -103,6 +108,7 @@ import com.android.wallpaper.util.ActivityUtils
 import com.android.wallpaper.util.CuratedPhotosTimeUtil
 import com.android.wallpaper.util.DisplayUtils
 import com.android.wallpaper.util.LaunchSourceUtils.WALLPAPER_LAUNCH_SOURCE
+import com.android.wallpaper.util.ScreenSizeCalculator
 import com.android.wallpaper.util.WallpaperConnection
 import com.android.wallpaper.util.converter.WallpaperModelFactory
 import com.android.wallpaper.util.wallpaperconnection.WallpaperConnectionUtils
@@ -147,6 +153,13 @@ class CustomizationPickerFragment :
     private var fullyCollapsed = false
     private var expandedPreviewHeaderHeight = 0
     private var collapsedPreviewHeaderHeight = 0
+    private var previewPagerViews: PreviewPagerViews? = null
+
+    /**
+     * True when entering a customization option from the collapsed header, so the pager should
+     * settle on the centered layout instantly instead of animating the shuffle.
+     */
+    private val snapToCenteredOnEnter = mutableStateOf(false)
 
     private var onBackPressedCallback: OnBackPressedCallback? = null
     private lateinit var extendedWallpaperEffectsLauncher: ActivityResultLauncher<Intent>
@@ -336,7 +349,7 @@ class CustomizationPickerFragment :
                         updateHeaderHeightConstraints(
                             pickerMotionContainer = pickerMotionContainer,
                             previewLabelHeight =
-                                view.requireViewById<View>(R.id.label_placeholder).height,
+                                previewPagerViews?.lockPreviewLabelContainer?.height ?: 0,
                             optionContainerHeight = optionContainer.height,
                             packThemeSuggestedChip = packThemeSuggestedChip,
                             bottomInset = insets.bottom,
@@ -369,16 +382,15 @@ class CustomizationPickerFragment :
             val size = displayUtils.getActiveDisplaySize(it)
             previewViewModel.updateDisplayConfiguration(size)
         }
-        val previewPager: ClickableMotionLayout =
+        val previewPager: View =
             if (isDesktopUi) {
                 // Replace the view pager with the one for desktop UI
-                val originalPreviewPager: ClickableMotionLayout =
-                    view.requireViewById(R.id.preview_pager)
+                val originalPreviewPager: View = view.requireViewById(R.id.preview_pager)
                 val previewPagerParent: ViewGroup = originalPreviewPager.parent as ViewGroup
                 previewPagerParent.removeView(originalPreviewPager)
-                (inflater.inflate(R.layout.preview_pager2_desktop, previewPagerParent, false)
-                        as ClickableMotionLayout)
-                    .also { previewPagerParent.addView(it) }
+                inflater.inflate(R.layout.preview_pager2_desktop, previewPagerParent, false).also {
+                    previewPagerParent.addView(it)
+                }
             } else {
                 view.requireViewById(R.id.preview_pager)
             }
@@ -387,12 +399,11 @@ class CustomizationPickerFragment :
         // 1 customizationOptionsData is ready and emits data.
         // 2a When it is a Fragment reenter, after Fragment reenter transition ends.
         // 2b When it is an Activity fresh start, after the enter animation ends.
-        setPreviewPagerVisible(previewPager = previewPager, isVisible = false)
-        val previewPagerViews: PreviewPagerViews =
-            initPreviewPager(rootView = view, previewPager = previewPager)
+        previewPagerViews = initPreviewPager(rootView = view, previewPager = previewPager)
+        setPreviewPagerVisible(isVisible = false)
         bindPreviewPager(
             rootView = view,
-            previewPagerViews = previewPagerViews,
+            previewPagerViews = previewPagerViews!!,
             isFirstBinding = savedInstanceState == null,
         )
 
@@ -430,7 +441,7 @@ class CustomizationPickerFragment :
                     updateHeaderHeightConstraints(
                         pickerMotionContainer = pickerMotionContainer,
                         previewLabelHeight =
-                            view.requireViewById<View>(R.id.label_placeholder).height,
+                            previewPagerViews?.lockPreviewLabelContainer?.height ?: 0,
                         optionContainerHeight = optionContainer.height,
                         packThemeSuggestedChip = packThemeSuggestedChip,
                         bottomInset = optionContainer.paddingBottom,
@@ -597,12 +608,34 @@ class CustomizationPickerFragment :
         val minExpandedPagerHeight = minExpandedPreviewHeight + previewLabelHeight
         val maxExpandedPagerHeight = maxExpandedPreviewHeight + previewLabelHeight
 
+        // The two previews are shown side by side, so each is capped at half the width and its
+        // height follows the display aspect ratio. Cap the expanded header at that fitted height so
+        // the previews fill the header without leaving a gap below them.
+        val previewHeader: View = pickerMotionContainer.requireViewById(R.id.preview_header)
+        val sideBySideHorizontalMargin =
+            resources.getDimensionPixelSize(
+                R.dimen.customization_picker_preview_overview_horizontal_margin
+            ) +
+                resources.getDimensionPixelSize(
+                    R.dimen.customization_picker_preview_overview_half_gap
+                )
+        val sideBySidePreviewWidth = pickerMotionContainer.width / 2 - sideBySideHorizontalMargin
+        val screenAspectRatio =
+            ScreenSizeCalculator.getInstance().getScreenAspectRatio(requireContext())
+        val sideBySidePreviewHeight = (sideBySidePreviewWidth * screenAspectRatio).toInt()
+        val fittedExpandedHeaderHeight =
+            sideBySidePreviewHeight +
+                previewLabelHeight +
+                previewHeader.paddingTop +
+                previewHeader.paddingBottom
+
         // For expanded, show at least half of the first customization entry below the preview.
         val expandedHeaderHeight =
             (pickerMotionContainer.height -
                     bottomInset -
                     resources.getDimensionPixelSize(R.dimen.customization_option_entry_height) / 2)
                 .coerceAtMost(maxExpandedPagerHeight)
+                .coerceAtMost(fittedExpandedHeaderHeight)
                 .coerceAtLeast(minExpandedPagerHeight)
         pickerMotionContainer.getConstraintSet(R.id.expanded_header_primary)?.apply {
             constrainHeight(R.id.preview_header, expandedHeaderHeight)
@@ -623,7 +656,6 @@ class CustomizationPickerFragment :
 
         // The header collapses to move options upward, while its pager keeps the expanded size and
         // scrolls out without scaling the previews.
-        val previewHeader: View = pickerMotionContainer.requireViewById(R.id.preview_header)
         val previewPager: View = previewHeader.requireViewById(R.id.preview_pager)
         previewPager.layoutParams =
             previewPager.layoutParams.apply {
@@ -657,22 +689,32 @@ class CustomizationPickerFragment :
                     progress: Float,
                 ) {
                     if (expandedPreviewHeaderHeight == 0) return
-                    val previewPager: View =
-                        view
-                            ?.findViewById<View>(R.id.preview_header)
-                            ?.findViewById(R.id.preview_pager) ?: return
-                    val collapsedOffset =
-                        (collapsedPreviewHeaderHeight - expandedPreviewHeaderHeight).toFloat()
-                    previewPager.translationY =
-                        when {
-                            startId == R.id.expanded_header_primary &&
-                                endId == R.id.collapsed_header_primary -> collapsedOffset * progress
-                            startId == R.id.collapsed_header_primary && endId == R.id.secondary ->
-                                collapsedOffset * (1f - progress)
-                            startId == R.id.secondary && endId == R.id.collapsed_header_primary ->
-                                collapsedOffset * progress
-                            else -> return
-                        }
+                    val previewHeader: View =
+                        view?.findViewById<View>(R.id.preview_header) ?: return
+                    val previewPager: View = previewHeader.findViewById(R.id.preview_pager)
+                    // Derive the translation from the header's actual current height rather than
+                    // interpolating progress linearly. The header height follows the transition's
+                    // cubic interpolator while progress is linear, so a progress-based translation
+                    // drifts out of sync and the pager overflows the header, causing the
+                    // SurfaceView
+                    // previews to bleed into the customization options below.
+                    when {
+                        startId == R.id.expanded_header_primary &&
+                            endId == R.id.collapsed_header_primary ->
+                            previewPager.translationY =
+                                (previewHeader.height - expandedPreviewHeaderHeight).toFloat()
+                        startId == R.id.collapsed_header_primary && endId == R.id.secondary ->
+                            previewPager.translationY =
+                                (previewHeader.height - expandedPreviewHeaderHeight).toFloat()
+                        startId == R.id.secondary && endId == R.id.collapsed_header_primary ->
+                            previewPager.translationY =
+                                (previewHeader.height - expandedPreviewHeaderHeight).toFloat()
+                        startId == R.id.expanded_header_primary && endId == R.id.secondary ->
+                            previewPager.translationY = 0f
+                        startId == R.id.secondary && endId == R.id.expanded_header_primary ->
+                            previewPager.translationY = 0f
+                        else -> return
+                    }
                 }
 
                 override fun onTransitionCompleted(motionLayout: MotionLayout?, currentId: Int) {
@@ -684,8 +726,9 @@ class CustomizationPickerFragment :
                             packThemeSuggestedChip?.animateToExpanded()
                         }
                     } else if (currentId == R.id.collapsed_header_primary) {
-                        view?.findViewById<View>(R.id.preview_pager)?.translationY =
-                            (collapsedPreviewHeaderHeight - expandedPreviewHeaderHeight).toFloat()
+                        val previewHeader: View = view?.findViewById(R.id.preview_header) ?: return
+                        previewHeader.findViewById<View>(R.id.preview_pager)?.translationY =
+                            (previewHeader.height - expandedPreviewHeaderHeight).toFloat()
                         // Do not collapse or expand the wallpaper entry when
                         // isLargeScreenSingleDisplayPortrait is true
                         if (!isLargeScreenSingleDisplayPortrait) {
@@ -809,6 +852,10 @@ class CustomizationPickerFragment :
                     // there will be unexpected expand or collapse of the preview after the
                     // transition completes.
                     if (fullyCollapsed) {
+                        // The header was collapsed before entering the customization option. The
+                        // preview pager settles back to the side-by-side layout on its own (it is
+                        // now Compose-driven via the screen/selectedPreviewScreen flows), so only
+                        // the header collapse transition needs to run here.
                         pickerMotionContainer.transitionToState(R.id.collapsed_header_primary)
                     } else {
                         pickerMotionContainer.setTransition(
@@ -822,6 +869,7 @@ class CustomizationPickerFragment :
             navigateToSecondary = { option ->
                 if (pickerMotionContainer.currentState != R.id.secondary) {
                     fullyCollapsed = pickerMotionContainer.progress == 1.0f
+                    snapToCenteredOnEnter.value = fullyCollapsed
                     customizationOptionFloatingSheetViewMap[option]?.let { floatingSheetView ->
                         setCustomizationOptionFloatingSheet(
                             floatingSheetViewContent = floatingSheetView,
@@ -942,8 +990,7 @@ class CustomizationPickerFragment :
             // Only show the preview pager when the motion container's dimensions are calculated;
             // otherwise, we should wait until customizationOptionsData is ready and the dimensions
             // are calculated.
-            val previewPager: ClickableMotionLayout =
-                view?.findViewById(R.id.preview_pager) ?: return
+            val previewPager: View = view?.findViewById(R.id.preview_pager) ?: return
             // Show the preview pager only after enter animation completes. If the preview pager was
             // invisible, making it visible will trigger the surface view's surfaceCreated callback,
             // as well as the binding of the wallpaper preview and workspace preview.
@@ -1011,14 +1058,41 @@ class CustomizationPickerFragment :
         }
     }
 
-    private fun initPreviewPager(
-        rootView: View,
-        previewPager: ClickableMotionLayout,
-    ): PreviewPagerViews {
-        previewPager.addClickableViewId(R.id.preview_card)
+    private fun initPreviewPager(rootView: View, previewPager: View): PreviewPagerViews {
+        // On handheld the preview cards and labels are inflated here and positioned by a Compose
+        // composable; on desktop they are children of the ClickableMotionLayout from XML.
+        val lockPreview: View
+        val homePreview: View
+        val lockPreviewLabel: TextView
+        val homePreviewLabel: TextView
+        val lockPreviewLabelContainer: View
+        val homePreviewLabelContainer: View
+
+        if (isDesktopUi) {
+            val motionLayout = previewPager as ClickableMotionLayout
+            motionLayout.addClickableViewId(R.id.preview_card)
+            lockPreview = motionLayout.requireViewById(R.id.lock_preview)
+            homePreview = motionLayout.requireViewById(R.id.home_preview)
+            lockPreviewLabel = motionLayout.requireViewById(R.id.lock_preview_label)
+            homePreviewLabel = motionLayout.requireViewById(R.id.home_preview_label)
+            lockPreviewLabelContainer =
+                motionLayout.requireViewById(R.id.lock_preview_label_container)
+            homePreviewLabelContainer =
+                motionLayout.requireViewById(R.id.home_preview_label_container)
+        } else {
+            lockPreview = inflatePreviewCard(R.id.lock_preview)
+            homePreview = inflatePreviewCard(R.id.home_preview)
+            lockPreviewLabelContainer = inflatePreviewLabel(R.id.lock_preview_label_container)
+            lockPreviewLabel = lockPreviewLabelContainer.requireViewById(R.id.preview_label)
+            lockPreviewLabel.id = R.id.lock_preview_label
+            lockPreviewLabel.setText(R.string.lock_screen_tab)
+            homePreviewLabelContainer = inflatePreviewLabel(R.id.home_preview_label_container)
+            homePreviewLabel = homePreviewLabelContainer.requireViewById(R.id.preview_label)
+            homePreviewLabel.id = R.id.home_preview_label
+            homePreviewLabel.setText(R.string.home_screen_tab)
+        }
 
         // Inflate the clock and attach to the lock preview and bind clock view
-        val lockPreview: View = previewPager.requireViewById(R.id.lock_preview)
         val lockPreviewContainer: ViewGroup =
             lockPreview.requireViewById(R.id.wallpaper_preview_crop)
         val clockHostView =
@@ -1032,7 +1106,6 @@ class CustomizationPickerFragment :
             layoutInflater.inflate(R.layout.preview_shade, lockPreviewContainer, false)
         lockPreviewContainer.addView(lockPreviewShade)
 
-        val homePreview: View = previewPager.requireViewById(R.id.home_preview)
         val homePreviewContainer: ViewGroup =
             homePreview.requireViewById(R.id.wallpaper_preview_crop)
         // The shade covers the two surface views of the preview and reveals when the preview is
@@ -1053,26 +1126,24 @@ class CustomizationPickerFragment :
         if (isDesktopUi) {
             setUpPreviewCardFocusListener(
                 lockPreview.requireViewById<View>(R.id.preview_card),
-                previewPager,
+                previewPager as ClickableMotionLayout,
                 LOCK_SCREEN,
             )
             setUpPreviewCardFocusListener(
                 homePreview.requireViewById<View>(R.id.preview_card),
-                previewPager,
+                previewPager as ClickableMotionLayout,
                 HOME_SCREEN,
             )
         }
 
         return PreviewPagerViews(
             previewPager = previewPager,
-            lockPreviewLabel = previewPager.requireViewById(R.id.lock_preview_label),
-            homePreviewLabel = previewPager.requireViewById(R.id.home_preview_label),
-            lockPreviewLabelContainer =
-                previewPager.requireViewById(R.id.lock_preview_label_container),
-            homePreviewLabelContainer =
-                previewPager.requireViewById(R.id.home_preview_label_container),
-            lockPreview = previewPager.requireViewById(R.id.lock_preview),
-            homePreview = previewPager.requireViewById(R.id.home_preview),
+            lockPreviewLabel = lockPreviewLabel,
+            homePreviewLabel = homePreviewLabel,
+            lockPreviewLabelContainer = lockPreviewLabelContainer,
+            homePreviewLabelContainer = homePreviewLabelContainer,
+            lockPreview = lockPreview,
+            homePreview = homePreview,
             lockPreviewShade = lockPreviewShade,
             homePreviewShade = homePreviewShade,
             clockHostView = clockHostView,
@@ -1080,12 +1151,35 @@ class CustomizationPickerFragment :
         )
     }
 
+    private fun inflatePreviewCard(id: Int): View =
+        layoutInflater.inflate(R.layout.wallpaper_preview_card2, null).apply { this.id = id }
+
+    private fun inflatePreviewLabel(id: Int): View =
+        layoutInflater.inflate(R.layout.preview_label, null).apply { this.id = id }
+
     private fun bindPreviewPager(
         rootView: View,
         previewPagerViews: PreviewPagerViews,
         isFirstBinding: Boolean,
     ) {
         PreviewPagerBinder.bind(previewPagerViews, customizationPickerViewModel, viewLifecycleOwner)
+
+        if (!isDesktopUi) {
+            val composeView = previewPagerViews.previewPager as ComposeView
+            composeView.setViewCompositionStrategy(
+                ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed
+            )
+            composeView.setContent {
+                PreviewPagerCompose(
+                    lockLabelView = previewPagerViews.lockPreviewLabelContainer,
+                    homeLabelView = previewPagerViews.homePreviewLabelContainer,
+                    lockPreviewCard = previewPagerViews.lockPreview,
+                    homePreviewCard = previewPagerViews.homePreview,
+                    viewModel = customizationPickerViewModel,
+                    snapToCenteredOnEnter = snapToCenteredOnEnter.value,
+                )
+            }
+        }
 
         ColorUpdateBinder.bind(
             setColor = { color -> previewPagerViews.lockPreviewLabel.setTextColor(color) },
@@ -1148,7 +1242,7 @@ class CustomizationPickerFragment :
 
     private fun bindPreview(
         screen: Screen,
-        previewPager: ClickableMotionLayout,
+        previewPager: View,
         preview: View,
         isFirstBinding: Boolean,
     ) {
@@ -1191,7 +1285,7 @@ class CustomizationPickerFragment :
             },
             onTransitionToScreen = { toScreen ->
                 if (isDesktopUi) {
-                    previewPager.transitionToScreen(toScreen)
+                    (previewPager as ClickableMotionLayout).transitionToScreen(toScreen)
                 } else {
                     // The home and lock previews are shown side by side on phone, so selecting
                     // the screen does not require a preview transition.
@@ -1375,16 +1469,16 @@ class CustomizationPickerFragment :
         transition.addListener(
             object : Transition.TransitionListener {
                 override fun onTransitionStart(transition: Transition) {
-                    val previewPager: View = view?.findViewById(R.id.preview_pager) ?: return
-                    setPreviewPagerVisible(previewPager = previewPager, isVisible = false)
+                    view ?: return
+                    setPreviewPagerVisible(isVisible = false)
                     isFragmentReenterAfterExit = true
                 }
 
                 override fun onTransitionEnd(transition: Transition) {}
 
                 override fun onTransitionCancel(transition: Transition) {
-                    val previewPager: View = view?.findViewById(R.id.preview_pager) ?: return
-                    setPreviewPagerVisible(previewPager = previewPager, isVisible = true)
+                    view ?: return
+                    setPreviewPagerVisible(isVisible = true)
                     isFragmentReenterAfterExit = false
                 }
 
@@ -1409,8 +1503,7 @@ class CustomizationPickerFragment :
                         // calculated; otherwise, we should wait until customizationOptionsData
                         // is ready and the dimensions are calculated.
                         val rootView = view ?: return
-                        val previewPager: ClickableMotionLayout =
-                            rootView.requireViewById(R.id.preview_pager)
+                        val previewPager: View = rootView.requireViewById(R.id.preview_pager)
                         showPreviewPagerAndBindAlphaAnimation(previewPager)
                     }
                     isFragmentReenterEnded = true
@@ -1425,10 +1518,10 @@ class CustomizationPickerFragment :
         )
     }
 
-    private fun showPreviewPagerAndBindAlphaAnimation(previewPager: ClickableMotionLayout) {
-        setPreviewPagerVisible(previewPager = previewPager, isVisible = true)
+    private fun showPreviewPagerAndBindAlphaAnimation(previewPager: View) {
+        setPreviewPagerVisible(isVisible = true)
         PreviewAlphaAnimationBinder.bind(
-            previewPager = previewPager,
+            previewPagerViews = previewPagerViews ?: return,
             viewModel = customizationPickerViewModel,
             lifecycleOwner = viewLifecycleOwner,
         )
@@ -1440,11 +1533,12 @@ class CustomizationPickerFragment :
      * issue due to the unexpected [SurfaceView] callbacks of onSurfaceCreated and
      * onSurfaceDestroyed, during Fragment transition.
      */
-    private fun setPreviewPagerVisible(previewPager: View, isVisible: Boolean) {
-        val lockPreviewLabel: View = previewPager.requireViewById(R.id.lock_preview_label)
-        val homePreviewLabel: View = previewPager.requireViewById(R.id.home_preview_label)
-        val lockPreview: View = previewPager.requireViewById(R.id.lock_preview)
-        val homePreview: View = previewPager.requireViewById(R.id.home_preview)
+    private fun setPreviewPagerVisible(isVisible: Boolean) {
+        val views = previewPagerViews ?: return
+        val lockPreviewLabel: View = views.lockPreviewLabel
+        val homePreviewLabel: View = views.homePreviewLabel
+        val lockPreview: View = views.lockPreview
+        val homePreview: View = views.homePreview
         val lockWallpaperSurface: SurfaceView = lockPreview.requireViewById(R.id.wallpaper_surface)
         val lockWorkspaceSurface: SurfaceView = lockPreview.requireViewById(R.id.workspace_surface)
         val homeWallpaperSurface: SurfaceView = homePreview.requireViewById(R.id.wallpaper_surface)

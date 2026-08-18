@@ -27,9 +27,10 @@ import com.android.wallpaper.model.Screen.LOCK_SCREEN
 import com.android.wallpaper.picker.customization.ui.view.DeviceRadiusPreviewCardView
 import com.android.wallpaper.picker.customization.ui.view.PreviewPagerViews
 import com.android.wallpaper.picker.customization.ui.viewmodel.CustomizationPickerViewModel2
+import com.android.wallpaper.picker.preview.ui.view.ClickableMotionLayout
 import kotlinx.coroutines.launch
 
-/** Binds the main screen home and lock screen preview MotionLayout. */
+/** Binds the main screen home and lock screen preview. */
 object PreviewPagerBinder {
 
     fun bind(
@@ -58,20 +59,14 @@ object PreviewPagerBinder {
                 }
             }
         }
-        lifecycleOwner.lifecycleScope.launch {
-            lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                launch {
-                    viewModel.isPagerInteractable.collect {
-                        if (showDesktopUi) {
-                            previewPager.getTransition(R.id.preview_swipe_transition).isEnabled = it
-                            previewPager.shouldInterceptTouch = it
-                        } else {
-                            // The home and lock previews are shown side by side and selected by
-                            // tapping, so swiping is disabled and touches are passed through to
-                            // the preview cards.
-                            previewPager.getTransition(R.id.preview_swipe_transition).isEnabled =
-                                false
-                            previewPager.shouldInterceptTouch = false
+        if (showDesktopUi) {
+            val motionLayout = previewPager as ClickableMotionLayout
+            lifecycleOwner.lifecycleScope.launch {
+                lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                    launch {
+                        viewModel.isPagerInteractable.collect {
+                            motionLayout.getTransition(R.id.preview_swipe_transition).isEnabled = it
+                            motionLayout.shouldInterceptTouch = it
                         }
                     }
                 }
