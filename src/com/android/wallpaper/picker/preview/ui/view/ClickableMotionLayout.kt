@@ -41,6 +41,7 @@ class ClickableMotionLayout(context: Context, attrs: AttributeSet?) : MotionLayo
 
     /** lambda to run after the completion of a motion layout transition */
     private var onTransitionCompleted: ((currentId: Int) -> Unit)? = null
+    private var onTransitionChanged: ((startId: Int, endId: Int, progress: Float) -> Unit)? = null
 
     // we start at the home screen (right boundary)
     private var isAtLeftBoundary = false
@@ -57,6 +58,10 @@ class ClickableMotionLayout(context: Context, attrs: AttributeSet?) : MotionLayo
 
     fun setOnTransitionCompleted(listener: (currentId: Int) -> Unit) {
         onTransitionCompleted = listener
+    }
+
+    fun setOnTransitionChanged(listener: (startId: Int, endId: Int, progress: Float) -> Unit) {
+        onTransitionChanged = listener
     }
 
     override fun onAttachedToWindow() {
@@ -84,6 +89,7 @@ class ClickableMotionLayout(context: Context, attrs: AttributeSet?) : MotionLayo
                     endId: Int,
                     progress: Float,
                 ) {
+                    onTransitionChanged?.invoke(startId, endId, progress)
                     if (DEBUG) {
                         Log.v(
                             TAG,

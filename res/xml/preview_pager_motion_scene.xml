@@ -79,11 +79,6 @@
             <KeyAttribute
                 app:motionTarget="@id/home_preview"
                 app:framePosition="38"
-                android:alpha="1"
-                android:translationZ="-8dp" />
-            <KeyAttribute
-                app:motionTarget="@id/home_preview"
-                app:framePosition="78"
                 android:alpha="0"
                 android:translationZ="-8dp" />
             <KeyAttribute
@@ -147,11 +142,6 @@
             <KeyAttribute
                 app:motionTarget="@id/lock_preview"
                 app:framePosition="38"
-                android:alpha="1"
-                android:translationZ="-8dp" />
-            <KeyAttribute
-                app:motionTarget="@id/lock_preview"
-                app:framePosition="78"
                 android:alpha="0"
                 android:translationZ="-8dp" />
             <KeyAttribute

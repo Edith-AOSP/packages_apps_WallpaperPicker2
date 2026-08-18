@@ -89,22 +89,24 @@ object CustomizationPickerBinder2 {
         val previewPager: ClickableMotionLayout = view.requireViewById(R.id.preview_pager)
         val lockPreview: View = previewPager.requireViewById(R.id.lock_preview)
         val homePreview: View = previewPager.requireViewById(R.id.home_preview)
+        val lockPreviewContent: View = lockPreview.requireViewById(R.id.wallpaper_preview_crop)
+        val homePreviewContent: View = homePreview.requireViewById(R.id.wallpaper_preview_crop)
         val showDesktopUi = BaseFlags.get(view.context).shouldShowDesktopUi(view.context)
 
         previewPager.setOnTransitionCompleted { currentId ->
             when (currentId) {
                 R.id.lock_preview_centered -> {
-                    homePreview.visibility = View.GONE
-                    lockPreview.visibility = View.VISIBLE
+                    homePreviewContent.visibility = View.INVISIBLE
+                    lockPreviewContent.visibility = View.VISIBLE
                 }
                 R.id.home_preview_centered -> {
-                    lockPreview.visibility = View.GONE
-                    homePreview.visibility = View.VISIBLE
+                    lockPreviewContent.visibility = View.INVISIBLE
+                    homePreviewContent.visibility = View.VISIBLE
                 }
                 R.id.lock_preview_selected,
                 R.id.home_preview_selected -> {
-                    lockPreview.visibility = View.VISIBLE
-                    homePreview.visibility = View.VISIBLE
+                    lockPreviewContent.visibility = View.VISIBLE
+                    homePreviewContent.visibility = View.VISIBLE
                     lockPreview.alpha = 1f
                     homePreview.alpha = 1f
                 }
@@ -116,6 +118,29 @@ object CustomizationPickerBinder2 {
                     else -> return@setOnTransitionCompleted
                 }
             viewModel.selectPreviewScreen(screen)
+        }
+
+        if (!showDesktopUi) {
+            previewPager.setOnTransitionChanged { startId, endId, progress ->
+                val isOpeningLock = endId == R.id.lock_preview_centered
+                val isOpeningHome = endId == R.id.home_preview_centered
+                val isClosing =
+                    endId == R.id.lock_preview_selected || endId == R.id.home_preview_selected
+                if (isOpeningLock || isOpeningHome) {
+                    if (progress >= 0.38f) {
+                        if (isOpeningLock) homePreviewContent.visibility = View.INVISIBLE
+                        else lockPreviewContent.visibility = View.INVISIBLE
+                    } else {
+                        lockPreviewContent.visibility = View.VISIBLE
+                        homePreviewContent.visibility = View.VISIBLE
+                    }
+                } else if (isClosing && progress >= 0.38f) {
+                    lockPreviewContent.visibility = View.VISIBLE
+                    homePreviewContent.visibility = View.VISIBLE
+                    lockPreview.alpha = 1f
+                    homePreview.alpha = 1f
+                }
+            }
         }
 
         lifecycleOwner.lifecycleScope.launch {
@@ -140,9 +165,14 @@ object CustomizationPickerBinder2 {
                             selectedScreen to pickerScreen.first
                         }
                         .collect { (selectedScreen, pickerScreen) ->
-                            if (!showDesktopUi && pickerScreen == MAIN) {
-                                lockPreview.visibility = View.VISIBLE
-                                homePreview.visibility = View.VISIBLE
+                            if (
+                                !showDesktopUi &&
+                                    pickerScreen == MAIN &&
+                                    (previewPager.currentState == R.id.lock_preview_selected ||
+                                        previewPager.currentState == R.id.home_preview_selected)
+                            ) {
+                                lockPreviewContent.visibility = View.VISIBLE
+                                homePreviewContent.visibility = View.VISIBLE
                                 lockPreview.alpha = 1f
                                 homePreview.alpha = 1f
                             }
