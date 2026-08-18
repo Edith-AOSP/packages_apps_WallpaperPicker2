@@ -21,7 +21,9 @@ import android.content.Intent
 import androidx.activity.viewModels
 import androidx.test.core.app.ActivityScenario
 import androidx.test.espresso.Espresso.onView
+import androidx.test.espresso.action.ViewActions.click
 import androidx.test.espresso.assertion.ViewAssertions.matches
+import androidx.test.espresso.matcher.ViewMatchers.isDescendantOfA
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.withId
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -40,6 +42,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.android.testing.HiltAndroidRule
 import dagger.hilt.android.testing.HiltAndroidTest
 import javax.inject.Inject
+import org.hamcrest.Matchers.allOf
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -103,6 +106,35 @@ class CustomizationPickerActivityTest {
                 activity.viewModels<CustomizationPickerViewModel2>().value
             assertThat(customizationPickerViewModel.selectedPreviewScreen.value)
                 .isEqualTo(Screen.LOCK_SCREEN)
+        }
+    }
+
+    @Test
+    fun launch_bothPreviewsShownSideBySide() {
+        ActivityScenario.launch(CustomizationPickerActivity::class.java)
+
+        onView(allOf(withId(R.id.preview_card), isDescendantOfA(withId(R.id.lock_preview))))
+            .check(matches(isDisplayed()))
+        onView(allOf(withId(R.id.preview_card), isDescendantOfA(withId(R.id.home_preview))))
+            .check(matches(isDisplayed()))
+    }
+
+    @Test
+    fun clickHomePreview_selectsHomeScreen() {
+        val intent =
+            Intent(context, CustomizationPickerActivity::class.java).apply {
+                putExtra(WALLPAPER_LAUNCH_SOURCE, LAUNCH_SOURCE_SETTINGS)
+            }
+        val scenario = ActivityScenario.launch<CustomizationPickerActivity>(intent)
+
+        onView(allOf(withId(R.id.preview_card), isDescendantOfA(withId(R.id.home_preview))))
+            .perform(click())
+
+        scenario.onActivity { activity ->
+            val customizationPickerViewModel =
+                activity.viewModels<CustomizationPickerViewModel2>().value
+            assertThat(customizationPickerViewModel.selectedPreviewScreen.value)
+                .isEqualTo(HOME_SCREEN)
         }
     }
 }

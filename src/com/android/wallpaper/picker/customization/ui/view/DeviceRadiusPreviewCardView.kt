@@ -17,6 +17,8 @@
 package com.android.wallpaper.picker.customization.ui.view
 
 import android.content.Context
+import android.graphics.Canvas
+import android.graphics.Paint
 import android.os.Build
 import android.util.AttributeSet
 import android.view.RoundedCorner.POSITION_TOP_LEFT
@@ -34,6 +36,20 @@ class DeviceRadiusPreviewCardView(context: Context, attrs: AttributeSet?) :
 
     private var fullCornerRadius: Float = 0f
     private var screenHeight: Int = 0
+    private val selectionOutlinePaint =
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = context.getColor(R.color.system_primary)
+            style = Paint.Style.STROKE
+            strokeWidth = resources.getDimension(R.dimen.option_selected_border_width)
+        }
+
+    var isSelectionOutlined = false
+        set(value) {
+            if (field != value) {
+                field = value
+                invalidate()
+            }
+        }
 
     // in the event that the corner radius can't be determined, this value is used a fallback
     // this seems to be the case with unfolded screens failing to get the screen corner radius
@@ -69,5 +85,21 @@ class DeviceRadiusPreviewCardView(context: Context, attrs: AttributeSet?) :
             val scale = measuredHeight.toFloat() / screenHeight.toFloat()
             radius = fullCornerRadius * scale
         }
+    }
+
+    override fun dispatchDraw(canvas: Canvas) {
+        super.dispatchDraw(canvas)
+        if (!isSelectionOutlined) return
+
+        val inset = selectionOutlinePaint.strokeWidth / 2f
+        canvas.drawRoundRect(
+            inset,
+            inset,
+            width - inset,
+            height - inset,
+            radius,
+            radius,
+            selectionOutlinePaint,
+        )
     }
 }

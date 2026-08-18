@@ -44,6 +44,7 @@ import com.android.wallpaper.picker.data.WallpaperModel
 import com.android.wallpaper.picker.data.category.CategoryModel
 import com.android.wallpaper.picker.preview.ui.view.ClickableMotionLayout
 import com.android.wallpaper.util.CuratedPhotosTimeUtil
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
 object CustomizationPickerBinder2 {
@@ -86,8 +87,28 @@ object CustomizationPickerBinder2 {
         val homeCustomizationOptionContainer: LinearLayout =
             view.requireViewById(R.id.home_customization_option_container)
         val previewPager: ClickableMotionLayout = view.requireViewById(R.id.preview_pager)
+        val lockPreview: View = previewPager.requireViewById(R.id.lock_preview)
+        val homePreview: View = previewPager.requireViewById(R.id.home_preview)
+        val showDesktopUi = BaseFlags.get(view.context).shouldShowDesktopUi(view.context)
 
         previewPager.setOnTransitionCompleted { currentId ->
+            when (currentId) {
+                R.id.lock_preview_centered -> {
+                    homePreview.visibility = View.GONE
+                    lockPreview.visibility = View.VISIBLE
+                }
+                R.id.home_preview_centered -> {
+                    lockPreview.visibility = View.GONE
+                    homePreview.visibility = View.VISIBLE
+                }
+                R.id.lock_preview_selected,
+                R.id.home_preview_selected -> {
+                    lockPreview.visibility = View.VISIBLE
+                    homePreview.visibility = View.VISIBLE
+                    lockPreview.alpha = 1f
+                    homePreview.alpha = 1f
+                }
+            }
             val screen =
                 when (currentId) {
                     R.id.lock_preview_selected -> LOCK_SCREEN
@@ -113,24 +134,49 @@ object CustomizationPickerBinder2 {
                 }
 
                 launch {
-                    viewModel.selectedPreviewScreen.collect {
-                        when (it) {
-                            LOCK_SCREEN -> {
-                                if (previewPager.currentState != R.id.lock_preview_selected) {
-                                    previewPager.jumpToState(R.id.lock_preview_selected)
-                                }
-                                lockCustomizationOptionContainer.isInvisible = false
-                                homeCustomizationOptionContainer.isInvisible = true
+                    combine(viewModel.selectedPreviewScreen, viewModel.screen) {
+                            selectedScreen,
+                            pickerScreen ->
+                            selectedScreen to pickerScreen.first
+                        }
+                        .collect { (selectedScreen, pickerScreen) ->
+                            if (!showDesktopUi && pickerScreen == MAIN) {
+                                lockPreview.visibility = View.VISIBLE
+                                homePreview.visibility = View.VISIBLE
+                                lockPreview.alpha = 1f
+                                homePreview.alpha = 1f
                             }
-                            HOME_SCREEN -> {
-                                if (previewPager.currentState != R.id.home_preview_selected) {
-                                    previewPager.jumpToState(R.id.home_preview_selected)
+                            val targetState =
+                                when {
+                                    !showDesktopUi && pickerScreen == CUSTOMIZATION_OPTION ->
+                                        when (selectedScreen) {
+                                            LOCK_SCREEN -> R.id.lock_preview_centered
+                                            HOME_SCREEN -> R.id.home_preview_centered
+                                        }
+                                    else ->
+                                        when (selectedScreen) {
+                                            LOCK_SCREEN -> R.id.lock_preview_selected
+                                            HOME_SCREEN -> R.id.home_preview_selected
+                                        }
                                 }
-                                lockCustomizationOptionContainer.isInvisible = true
-                                homeCustomizationOptionContainer.isInvisible = false
+                            if (previewPager.currentState != targetState) {
+                                previewPager.transitionToState(
+                                    targetState,
+                                    PREVIEW_TRANSITION_DURATION,
+                                )
+                            }
+
+                            when (selectedScreen) {
+                                LOCK_SCREEN -> {
+                                    lockCustomizationOptionContainer.isInvisible = false
+                                    homeCustomizationOptionContainer.isInvisible = true
+                                }
+                                HOME_SCREEN -> {
+                                    lockCustomizationOptionContainer.isInvisible = true
+                                    homeCustomizationOptionContainer.isInvisible = false
+                                }
                             }
                         }
-                    }
                 }
             }
         }
@@ -146,19 +192,6 @@ object CustomizationPickerBinder2 {
                 )
             }
         }
-
-        WallpaperPickerEntryBinder.bind(
-            view = view.requireViewById(R.id.wallpaper_picker_entry),
-            viewModel = viewModel,
-            colorUpdateViewModel = colorUpdateViewModel,
-            lifecycleOwner = lifecycleOwner,
-            navigateToWallpaperCategoriesScreen = navigateToWallpaperCategoriesScreen,
-            navigateToPreviewScreen = navigateToPreviewScreen,
-            navigateToWallpaperCollectionScreen = navigateToWallpaperCollectionScreen,
-            navigateToExtendedWallpaperEffects = navigateToExtendedWallpaperEffects,
-            curatedPhotosTimeUtil = curatedPhotosTimeUtil,
-            userEventLogger = userEventLogger,
-        )
 
         customizationOptionsBinder.bind(
             customizationOptionsData,
@@ -177,4 +210,6 @@ object CustomizationPickerBinder2 {
             iconStyleViewUtil,
         )
     }
+
+    private const val PREVIEW_TRANSITION_DURATION = 360
 }

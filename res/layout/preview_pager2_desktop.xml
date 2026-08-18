@@ -20,7 +20,7 @@
     android:id="@+id/preview_pager"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    app:layoutDescription="@xml/preview_pager_motion_scene">
+    app:layoutDescription="@xml/preview_pager_motion_scene_desktop">
 
     <LinearLayout
         android:id="@+id/tabs"

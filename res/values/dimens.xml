@@ -418,6 +418,8 @@
     <dimen name="customization_picker_max_preview_expanded_height">580dp</dimen>
     <dimen name="customization_picker_preview_label_padding_bottom">12dp</dimen>
     <dimen name="customization_picker_preview_bottom_padding">12dp</dimen>
+    <dimen name="customization_picker_preview_top_padding">16dp</dimen>
+    <dimen name="customization_picker_preview_compact_bottom_padding">4dp</dimen>
     <dimen name="customization_option_container_horizontal_padding">16dp</dimen>
     <dimen name="customization_option_entry_height">84dp</dimen>
     <dimen name="customization_option_entry_corner_radius_large">28dp</dimen>
@@ -464,6 +466,8 @@
     <dimen name="handheld_small_preview_pager_margin_start">16dp</dimen>
     <dimen name="handheld_small_preview_pager_margin_end">16dp</dimen>
     <dimen name="handheld_small_preview_space_between_preview">16dp</dimen>
+    <dimen name="customization_picker_preview_overview_horizontal_margin">24dp</dimen>
+    <dimen name="customization_picker_preview_overview_half_gap">8dp</dimen>
     <dimen name="handheld_apply_wallpaper_screen_margin_horizontal">24dp</dimen>
     <dimen name="handheld_apply_wallpaper_screen_margin_bottom">34dp</dimen>
     <dimen name="handheld_apply_wallpaper_screen_button_space">8dp</dimen>

@@ -19,7 +19,10 @@
     android:id="@+id/preview_header"
     android:layout_width="0dp"
     android:layout_height="@dimen/customization_picker_preview_header_expanded_height"
-    android:paddingBottom="@dimen/customization_picker_preview_bottom_padding"
+    android:clipChildren="true"
+    android:clipToPadding="true"
+    android:paddingTop="@dimen/customization_picker_preview_top_padding"
+    android:paddingBottom="@dimen/customization_picker_preview_compact_bottom_padding"
     tools:ignore="MergeRootFrame">
 
     <com.android.wallpaper.picker.preview.ui.view.ClickableMotionLayout
@@ -49,7 +52,6 @@
                 android:id="@+id/lock_preview_label"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:paddingBottom="@dimen/customization_picker_preview_label_padding_bottom"
                 android:gravity="center"
                 android:layout_gravity="center"
                 android:textColor="@color/system_on_surface"
@@ -90,6 +92,20 @@
             android:layout_height="wrap_content"
             android:orientation="vertical"
             app:layout_constraintGuide_percent="0.5" />
+
+        <androidx.constraintlayout.widget.Guideline
+            android:id="@+id/guideline_center_start"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            app:layout_constraintGuide_percent="0.25" />
+
+        <androidx.constraintlayout.widget.Guideline
+            android:id="@+id/guideline_center_end"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            app:layout_constraintGuide_percent="0.75" />
     </com.android.wallpaper.picker.preview.ui.view.ClickableMotionLayout>
 
     <View

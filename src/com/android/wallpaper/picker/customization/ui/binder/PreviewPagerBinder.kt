@@ -21,6 +21,10 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.android.wallpaper.R
+import com.android.wallpaper.config.BaseFlags
+import com.android.wallpaper.model.Screen.HOME_SCREEN
+import com.android.wallpaper.model.Screen.LOCK_SCREEN
+import com.android.wallpaper.picker.customization.ui.view.DeviceRadiusPreviewCardView
 import com.android.wallpaper.picker.customization.ui.view.PreviewPagerViews
 import com.android.wallpaper.picker.customization.ui.viewmodel.CustomizationPickerViewModel2
 import kotlinx.coroutines.launch
@@ -33,13 +37,41 @@ object PreviewPagerBinder {
         viewModel: CustomizationPickerViewModel2,
         lifecycleOwner: LifecycleOwner,
     ) {
+        val previewPager = previewPagerViews.previewPager
+        val showDesktopUi =
+            BaseFlags.get(previewPager.context).shouldShowDesktopUi(previewPager.context)
+        if (!showDesktopUi) {
+            val lockPreviewCard =
+                previewPagerViews.lockPreview.requireViewById<DeviceRadiusPreviewCardView>(
+                    R.id.preview_card
+                )
+            val homePreviewCard =
+                previewPagerViews.homePreview.requireViewById<DeviceRadiusPreviewCardView>(
+                    R.id.preview_card
+                )
+            lifecycleOwner.lifecycleScope.launch {
+                lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                    viewModel.selectedPreviewScreen.collect { selectedScreen ->
+                        lockPreviewCard.isSelectionOutlined = selectedScreen == LOCK_SCREEN
+                        homePreviewCard.isSelectionOutlined = selectedScreen == HOME_SCREEN
+                    }
+                }
+            }
+        }
         lifecycleOwner.lifecycleScope.launch {
             lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 launch {
                     viewModel.isPagerInteractable.collect {
-                        previewPagerViews.previewPager.apply {
-                            getTransition(R.id.preview_swipe_transition).isEnabled = it
-                            shouldInterceptTouch = it
+                        if (showDesktopUi) {
+                            previewPager.getTransition(R.id.preview_swipe_transition).isEnabled = it
+                            previewPager.shouldInterceptTouch = it
+                        } else {
+                            // The home and lock previews are shown side by side and selected by
+                            // tapping, so swiping is disabled and touches are passed through to
+                            // the preview cards.
+                            previewPager.getTransition(R.id.preview_swipe_transition).isEnabled =
+                                false
+                            previewPager.shouldInterceptTouch = false
                         }
                     }
                 }

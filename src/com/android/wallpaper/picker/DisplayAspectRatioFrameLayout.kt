@@ -23,6 +23,7 @@ import android.widget.FrameLayout
 import androidx.core.view.children
 import com.android.wallpaper.util.ScreenSizeCalculator
 import kotlin.math.max
+import kotlin.math.min
 
 /**
  * [FrameLayout] that sizes its children using a fixed aspect ratio that is the same as that of the
@@ -31,6 +32,11 @@ import kotlin.math.max
  * Uses the initial height to calculate width based on the display ratio, then use the new width to
  * get the new height, this will wrap the child view inside like wrap content for both width and
  * height, for this to work the width must be wrap_content or 0dp and the height cannot be 0dp.
+ *
+ * When neither the width nor the height is fixed (for example when the view is constrained with
+ * wrap_content in both dimensions inside a ConstraintLayout), the view instead fits inside the
+ * available bounds: it sizes itself to fill the width, but shrinks to fit the height if the
+ * available height is smaller, always preserving the display aspect ratio.
  */
 class DisplayAspectRatioFrameLayout(context: Context, attrs: AttributeSet?) :
     FrameLayout(context, attrs) {
@@ -38,6 +44,25 @@ class DisplayAspectRatioFrameLayout(context: Context, attrs: AttributeSet?) :
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         super.onMeasure(widthMeasureSpec, heightMeasureSpec)
         val screenAspectRatio = ScreenSizeCalculator.getInstance().getScreenAspectRatio(context)
+        if (
+            MeasureSpec.getMode(widthMeasureSpec) != MeasureSpec.EXACTLY &&
+                MeasureSpec.getMode(heightMeasureSpec) != MeasureSpec.EXACTLY
+        ) {
+            // Fit within the available bounds, preserving the display aspect ratio.
+            val width = min(measuredWidth, (measuredHeight / screenAspectRatio).toInt())
+            val height = (width * screenAspectRatio).toInt()
+            children.forEach { child ->
+                child.measure(
+                    MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
+                    MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY),
+                )
+            }
+            setMeasuredDimension(
+                resolveSize(width, widthMeasureSpec),
+                resolveSize(height, heightMeasureSpec),
+            )
+            return
+        }
         // We're always forcing the width based on the height. This will only work if the
         // DisplayAspectRatioFrameLayout is allowed to stretch to fill its parent (for example if
         // the parent is a vertical LinearLayout and the DisplayAspectRatioFrameLayout has a height

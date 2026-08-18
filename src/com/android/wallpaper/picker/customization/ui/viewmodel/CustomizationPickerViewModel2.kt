@@ -210,7 +210,12 @@ constructor(
                             )
                         else ->
                             PreviewAlpha(
-                                alpha = PREVIEW_HIDE_ALPHA,
+                                alpha =
+                                    if (BaseFlags.get(context).shouldShowDesktopUi(context)) {
+                                        PREVIEW_HIDE_ALPHA
+                                    } else {
+                                        PREVIEW_FADE_ALPHA
+                                    },
                                 showLabel = false,
                                 shouldAnimate = true,
                             )
