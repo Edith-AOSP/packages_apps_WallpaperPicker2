@@ -111,6 +111,9 @@ constructor(
             }
         }
 
+    /** Current wallpaper colors, used to tint remote workspace/label previews correctly. */
+    val wallpaperColorsModel: Flow<WallpaperColorsModel> = _wallpaperConnectionColors.asStateFlow()
+
     fun setWallpaperConnectionColors(wallpaperColors: WallpaperColorsModel) {
         _wallpaperConnectionColors.value = wallpaperColors
     }

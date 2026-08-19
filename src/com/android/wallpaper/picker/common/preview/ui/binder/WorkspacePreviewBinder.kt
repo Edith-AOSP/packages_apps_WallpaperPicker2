@@ -35,6 +35,7 @@ import com.android.wallpaper.model.Screen
 import com.android.wallpaper.model.wallpaper.DeviceDisplayType
 import com.android.wallpaper.picker.common.preview.ui.binder.BasePreviewBinder.MEDIA_OVERLAY_SURFACE_LAYER
 import com.android.wallpaper.picker.common.preview.ui.viewmodel.BasePreviewViewModel
+import com.android.wallpaper.picker.customization.shared.model.WallpaperColorsModel
 import com.android.wallpaper.picker.customization.ui.viewmodel.ColorUpdateViewModel
 import com.android.wallpaper.picker.customization.ui.viewmodel.CustomizationPickerViewModel2
 import com.android.wallpaper.util.PreviewUtils
@@ -108,26 +109,32 @@ object WorkspacePreviewBinder {
             override fun surfaceCreated(holder: SurfaceHolder) {
                 job =
                     lifecycleOwner.lifecycleScope.launch {
-                        val workspaceCallback =
-                            renderWorkspacePreview(
-                                surfaceView = surfaceView,
-                                screen = screen,
-                                previewUtils = previewUtils,
-                                displayId =
-                                    viewModel.basePreviewViewModel.getDisplayId(deviceDisplayType),
-                            )
-                        if (workspaceCallback != null) {
-                            workspaceCallbackBinder.bind(
-                                workspaceCallback = workspaceCallback,
-                                viewModel = viewModel.customizationOptionsViewModel,
-                                colorUpdateViewModel = colorUpdateViewModel,
-                                screen = screen,
-                                clockViewFactory = clockViewFactory,
-                                lifecycleOwner = lifecycleOwner,
-                            )
-                            previewDisposableHandle?.dispose()
-                            previewDisposableHandle = DisposableHandle {
-                                previewUtils.cleanUp(workspaceCallback)
+                        viewModel.basePreviewViewModel.wallpaperColorsModel.collect { colorsModel ->
+                            if (colorsModel !is WallpaperColorsModel.Loaded) return@collect
+                            val workspaceCallback =
+                                renderWorkspacePreview(
+                                    surfaceView = surfaceView,
+                                    screen = screen,
+                                    previewUtils = previewUtils,
+                                    displayId =
+                                        viewModel.basePreviewViewModel.getDisplayId(
+                                            deviceDisplayType
+                                        ),
+                                    wallpaperColors = colorsModel.colors,
+                                )
+                            if (workspaceCallback != null) {
+                                workspaceCallbackBinder.bind(
+                                    workspaceCallback = workspaceCallback,
+                                    viewModel = viewModel.customizationOptionsViewModel,
+                                    colorUpdateViewModel = colorUpdateViewModel,
+                                    screen = screen,
+                                    clockViewFactory = clockViewFactory,
+                                    lifecycleOwner = lifecycleOwner,
+                                )
+                                previewDisposableHandle?.dispose()
+                                previewDisposableHandle = DisposableHandle {
+                                    previewUtils.cleanUp(workspaceCallback)
+                                }
                             }
                         }
                     }
