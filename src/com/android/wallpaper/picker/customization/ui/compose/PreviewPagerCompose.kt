@@ -18,7 +18,7 @@ package com.android.wallpaper.picker.customization.ui.compose
 
 import android.view.View
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -42,7 +42,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -75,19 +77,16 @@ import kotlin.math.min
  * - **Centered** (customization sub-setting): only the selected screen's preview is visible,
  *   centered at 50% of the container width. The Wallpapers row fades out during entry.
  *
- * The transition uses a two-phase slide so the two [android.view.SurfaceView]-backed cards never
- * overlap — trying to fade or z-order overlapping SurfaceView surfaces produces ghosting because
- * their surfaces composite in SurfaceFlinger below the window and cannot be reliably clipped or
- * reordered from the view hierarchy.
+ * The transition moves both cards simultaneously, driven by a single progress value. The active
+ * card slides between its side-by-side position and the container center; the inactive card slides
+ * between its side-by-side position and fully off-screen. Because the two cards diverge (active
+ * toward center, inactive toward the far edge) they never overlap — which avoids all
+ * [android.view.SurfaceView] z-order/ghosting problems, since overlapping SurfaceView surfaces
+ * composite in SurfaceFlinger below the window and cannot be reliably reordered from the view
+ * hierarchy.
  *
- * Progress: `0f` = side-by-side, `1f` = centered.
- * - **[0f, 0.5f]** — inactive card slides horizontally off-screen (past its side-by-side edge).
- *   Active card stays at its side-by-side position.
- * - **[0.5f, 1f]** — inactive card stays off-screen (surfaces set INVISIBLE). Active card slides
- *   from its side-by-side position to the container's center.
- *
- * Reversing the animation reverses the phases: on exit the active card slides back to its
- * side-by-side position first, then the inactive card slides back in from off-screen.
+ * Progress: `0f` = side-by-side, `1f` = centered. On exit both cards arrive at their side-by-side
+ * positions at the same time.
  *
  * The label containers and preview cards are Android views owned by the fragment; this composable
  * only positions and animates them. The views must be retained across recompositions because the
@@ -113,8 +112,18 @@ fun PreviewPagerCompose(
     // progress: 0f = side-by-side (main), 1f = centered (sub-setting).
     val progress = remember { Animatable(if (isCentered) 1f else 0f) }
 
+    // Whether the current transition is heading toward centered (enter) or back to side-by-side
+    // (exit). Enter uses a sequential two-phase slide (inactive out fast, then active to center);
+    // exit slides both cards simultaneously so they land side-by-side together.
+    var isEntering by remember { mutableStateOf(isCentered) }
+
+    // Material 3 expressive-motion easing (from the M3 motion spec / MotionTokens):
+    //   emphasized-decelerate = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
+    val enterEasing = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
+
     LaunchedEffect(isCentered, snapToCenteredOnEnter) {
         val target = if (isCentered) 1f else 0f
+        isEntering = isCentered
         if (isCentered && snapToCenteredOnEnter) {
             // Entering from the collapsed header: the pager is translated up and clipped, so
             // animating would make the preview travel through clipped positions. Settle on the
@@ -123,7 +132,9 @@ fun PreviewPagerCompose(
         } else {
             progress.animateTo(
                 targetValue = target,
-                animationSpec = tween(durationMillis = 360, easing = FastOutSlowInEasing),
+                // M3 expressive container transform: emphasized-decelerate, long duration
+                // (500ms, DurationLong2) for both enter and exit.
+                animationSpec = tween(durationMillis = 500, easing = enterEasing),
             )
         }
     }
@@ -138,9 +149,11 @@ fun PreviewPagerCompose(
     val density = LocalDensity.current
     val context = LocalContext.current
     val screenAspectRatio = ScreenSizeCalculator.getInstance().getScreenAspectRatio(context)
-    // Total horizontal margin reserved for a preview card (selected: 24dp + 8dp; centered:
-    // 16dp + 16dp).
-    val horizontalMargin = 32.dp
+    // Horizontal layout: each card is inset from the container edge by `outerMargin`, and the two
+    // cards are separated by `2 * halfGap`. Symmetric outer margins keep the pair centered.
+    val outerMargin =
+        dimensionResource(R.dimen.customization_picker_preview_overview_horizontal_margin)
+    val halfGap = dimensionResource(R.dimen.customization_picker_preview_overview_half_gap)
 
     BoxWithConstraints(modifier = modifier) {
         val containerWidth = maxWidth
@@ -154,7 +167,8 @@ fun PreviewPagerCompose(
         // vertical space so nothing overlaps.
         val previewAreaHeight = (containerHeight - wallpapersRowHeight).coerceAtLeast(0.dp)
         val availableHeight = (previewAreaHeight - labelBand).coerceAtLeast(0.dp)
-        val maxCardWidth = (containerWidth / 2 - horizontalMargin).coerceAtLeast(0.dp)
+        val maxCardWidth =
+            ((containerWidth - outerMargin * 2 - halfGap * 2) / 2).coerceAtLeast(0.dp)
         val maxCardWidthPx = with(density) { maxCardWidth.toPx() }
         val availableHeightPx = with(density) { availableHeight.toPx() }
         val cardWidthPx = min(maxCardWidthPx, (availableHeightPx / screenAspectRatio))
@@ -162,55 +176,62 @@ fun PreviewPagerCompose(
         val cardWidth = with(density) { cardWidthPx.toDp() }
         val cardHeight = with(density) { cardHeightPx.toDp() }
 
-        // Split progress into two phases so the two SurfaceView-backed cards never overlap.
-        // Phase 1 (0f..0.5f): the inactive card slides off-screen; the active stays put.
-        // Phase 2 (0.5f..1f): the active card slides to center; the inactive stays off-screen.
-        val phase1 = (p / 0.5f).coerceIn(0f, 1f) // 0..1 across the first half
-        val phase2 = ((p - 0.5f) / 0.5f).coerceIn(0f, 1f) // 0..1 across the second half
+        // Direction-aware transition. Both cards are driven by progress p (0f = side-by-side,
+        // 1f = centered).
+        //
+        // ENTER (p: 0 -> 1) — sequential two-phase slide: the inactive card slides off-screen
+        // first (fast), then the active card slides to center. This keeps the inactive visually out
+        // of the way before the active arrives.
+        // EXIT (p: 1 -> 0) — simultaneous slide: both cards move together so they land side-by-side
+        // at the same time.
+        //
+        // The two cards diverge (active toward center, inactive toward the far edge) so they never
+        // overlap regardless of direction.
+        //
+        // Side-by-side centers are computed from the symmetric outer margins so the pair stays
+        // centered with a fixed gap of `2 * halfGap`.
+        val centerX = containerWidth / 2
+        val lockSideX = outerMargin + cardWidth / 2
+        val homeSideX = containerWidth - outerMargin - cardWidth / 2
+        val lockOffX = -cardWidth / 2 // right edge at container start
+        val homeOffX = containerWidth + cardWidth / 2 // left edge at container end
 
-        // Fractional center positions. Lock's side-by-side center is at 0.25; home's at 0.75.
-        // Off-screen centers push the card fully outside the container: lock exits to the left
-        // (past 0), home exits to the right (past 1). Using half-card offsets keeps the maths in
-        // terms of the container width regardless of card width.
-        val cardHalfFraction = if (containerWidth > 0.dp) (cardWidth / 2) / containerWidth else 0f
-        val lockSideBySide = 0.25f
-        val homeSideBySide = 0.75f
-        val lockOffScreen = -cardHalfFraction
-        val homeOffScreen = 1f + cardHalfFraction
-        val center = 0.5f
+        // Sequential (enter) sub-progress: phase1 spans [0, 0.5], phase2 spans [0.5, 1].
+        val enterPhase1 = (p / 0.5f).coerceIn(0f, 1f)
+        val enterPhase2 = ((p - 0.5f) / 0.5f).coerceIn(0f, 1f)
 
-        val lockCenterFraction =
-            if (lockIsActive) {
-                // Active during phase 2 only: stays at side-by-side, then slides to center.
-                lockSideBySide + (center - lockSideBySide) * phase2
-            } else {
-                // Inactive during phase 1 only: slides from side-by-side to off-screen.
-                lockSideBySide + (lockOffScreen - lockSideBySide) * phase1
-            }
-        val homeCenterFraction =
-            if (!lockIsActive) {
-                homeSideBySide + (center - homeSideBySide) * phase2
-            } else {
-                homeSideBySide + (homeOffScreen - homeSideBySide) * phase1
-            }
-        val lockOffsetX = containerWidth * lockCenterFraction - cardWidth / 2
-        val homeOffsetX = containerWidth * homeCenterFraction - cardWidth / 2
+        // Active card slides side <-> center; inactive card slides side <-> off-screen.
+        val lockTargetX = if (lockIsActive) centerX else lockOffX
+        val homeTargetX = if (lockIsActive) homeOffX else centerX
 
-        // Once the inactive card is fully off-screen (phase 2), hide its surfaces so SurfaceFlinger
-        // stops compositing them. Reveal them again as soon as it starts sliding back in.
+        fun activePhase(): Float = if (isEntering) enterPhase2 else p
+        fun inactivePhase(): Float = if (isEntering) enterPhase1 else p
+
+        val lockPhase = if (lockIsActive) activePhase() else inactivePhase()
+        val homePhase = if (lockIsActive) inactivePhase() else activePhase()
+
+        val lockX = lockSideX + (lockTargetX - lockSideX) * lockPhase
+        val homeX = homeSideX + (homeTargetX - homeSideX) * homePhase
+
+        // offset positions the card's left edge.
+        val lockOffsetX = lockX - cardWidth / 2
+        val homeOffsetX = homeX - cardWidth / 2
+
+        // Hide the inactive card's surfaces once it is fully off-screen so SurfaceFlinger stops
+        // compositing them. On enter (sequential) the inactive is off-screen from the midpoint; on
+        // exit (simultaneous) it is off-screen only at the very start.
         SideEffect {
-            val lockShouldHide = !lockIsActive && p >= 0.5f
-            val homeShouldHide = lockIsActive && p >= 0.5f
+            val inactiveFullyOffScreen = if (isEntering) p >= 0.5f else p >= 0.999f
             setPreviewSurfacesVisibility(
                 lockPreviewCard,
-                if (lockShouldHide) View.INVISIBLE else View.VISIBLE,
+                if (!lockIsActive && inactiveFullyOffScreen) View.INVISIBLE else View.VISIBLE,
             )
             setPreviewSurfacesVisibility(
                 homePreviewCard,
-                if (homeShouldHide) View.INVISIBLE else View.VISIBLE,
+                if (lockIsActive && inactiveFullyOffScreen) View.INVISIBLE else View.VISIBLE,
             )
             // Cards themselves stay fully opaque throughout — no alpha work is needed since the
-            // inactive is either at its side-by-side spot, off-screen, or hidden outright.
+            // two cards never overlap.
             lockPreviewCard.alpha = 1f
             homePreviewCard.alpha = 1f
         }
@@ -258,12 +279,13 @@ fun PreviewPagerCompose(
 
             // The Wallpapers row lives below the previews inside the header. It fades and stops
             // accepting input while entering the sub-setting so it doesn't compete visually with
-            // the centered preview.
+            // the centered preview. Its top/bottom gap matches the inter-preview-card gap
+            // (2 * halfGap).
             WallpapersRow(
                 modifier =
                     Modifier.fillMaxWidth()
                         .height(wallpapersRowHeight)
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                        .padding(horizontal = 16.dp, vertical = halfGap * 2)
                         .alpha((1f - p).coerceIn(0f, 1f)),
                 onClick = onWallpapersClick?.takeIf { p < 0.5f },
             )

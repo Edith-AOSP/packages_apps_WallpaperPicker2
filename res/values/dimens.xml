@@ -467,7 +467,7 @@
     <dimen name="handheld_small_preview_pager_margin_end">16dp</dimen>
     <dimen name="handheld_small_preview_space_between_preview">16dp</dimen>
     <dimen name="customization_picker_preview_overview_horizontal_margin">24dp</dimen>
-    <dimen name="customization_picker_preview_overview_half_gap">8dp</dimen>
+    <dimen name="customization_picker_preview_overview_half_gap">6dp</dimen>
     <dimen name="customization_picker_preview_wallpapers_row_height">80dp</dimen>
     <dimen name="handheld_apply_wallpaper_screen_margin_horizontal">24dp</dimen>
     <dimen name="handheld_apply_wallpaper_screen_margin_bottom">34dp</dimen>
