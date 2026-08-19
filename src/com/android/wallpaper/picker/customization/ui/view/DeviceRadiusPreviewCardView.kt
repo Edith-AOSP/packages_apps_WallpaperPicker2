@@ -51,6 +51,19 @@ class DeviceRadiusPreviewCardView(context: Context, attrs: AttributeSet?) :
             }
         }
 
+    /**
+     * Colour of the selection outline. The paint is cached on construction with a snapshot of the
+     * dynamic [R.color.system_primary], so callers must push new values through this setter when
+     * the system palette changes (for example after the user picks a different Colors theme) —
+     * otherwise the outline would stay stale until the process is restarted.
+     */
+    fun setSelectionOutlineColor(color: Int) {
+        if (selectionOutlinePaint.color != color) {
+            selectionOutlinePaint.color = color
+            if (isSelectionOutlined) invalidate()
+        }
+    }
+
     // in the event that the corner radius can't be determined, this value is used a fallback
     // this seems to be the case with unfolded screens failing to get the screen corner radius
     private val cornerRadiusFallback =

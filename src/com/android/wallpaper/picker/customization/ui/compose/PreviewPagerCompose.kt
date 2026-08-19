@@ -20,13 +20,24 @@ import android.view.View
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -34,8 +45,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.dimensionResource
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -52,9 +70,10 @@ import kotlin.math.min
  *
  * The pager shows two states:
  * - **Side-by-side** (main screen): both preview cards are visible next to each other, at 25% and
- *   75% of the container width.
+ *   75% of the container width. A "Wallpapers" row sits below the previews as an entry point into
+ *   the wallpaper categories.
  * - **Centered** (customization sub-setting): only the selected screen's preview is visible,
- *   centered at 50% of the container width.
+ *   centered at 50% of the container width. The Wallpapers row fades out during entry.
  *
  * The transition uses a two-phase slide so the two [android.view.SurfaceView]-backed cards never
  * overlap — trying to fade or z-order overlapping SurfaceView surfaces produces ghosting because
@@ -83,6 +102,7 @@ fun PreviewPagerCompose(
     homePreviewCard: View,
     viewModel: CustomizationPickerViewModel2,
     snapToCenteredOnEnter: Boolean = false,
+    onWallpapersClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val selectedScreen by viewModel.selectedPreviewScreen.collectAsStateWithLifecycle()
@@ -109,6 +129,12 @@ fun PreviewPagerCompose(
     }
 
     val labelBand = 28.dp
+    // Reserved slot for the Wallpapers row below the previews. Matches the min-height used by
+    // HomepagePreference/EdithHomepageContent in Settings so the row keeps the same visual weight,
+    // and is kept in sync with fittedExpandedHeaderHeight in CustomizationPickerFragment via the
+    // shared dimen.
+    val wallpapersRowHeight =
+        dimensionResource(R.dimen.customization_picker_preview_wallpapers_row_height)
     val density = LocalDensity.current
     val context = LocalContext.current
     val screenAspectRatio = ScreenSizeCalculator.getInstance().getScreenAspectRatio(context)
@@ -124,8 +150,10 @@ fun PreviewPagerCompose(
 
         // The preview card keeps the display aspect ratio and fits within its horizontal and
         // vertical bounds, exactly like the DisplayAspectRatioFrameLayout did under the old
-        // MotionScene constraints.
-        val availableHeight = (containerHeight - labelBand).coerceAtLeast(0.dp)
+        // MotionScene constraints. The wallpapers row below is subtracted from the available
+        // vertical space so nothing overlaps.
+        val previewAreaHeight = (containerHeight - wallpapersRowHeight).coerceAtLeast(0.dp)
+        val availableHeight = (previewAreaHeight - labelBand).coerceAtLeast(0.dp)
         val maxCardWidth = (containerWidth / 2 - horizontalMargin).coerceAtLeast(0.dp)
         val maxCardWidthPx = with(density) { maxCardWidth.toPx() }
         val availableHeightPx = with(density) { availableHeight.toPx() }
@@ -187,39 +215,112 @@ fun PreviewPagerCompose(
             homePreviewCard.alpha = 1f
         }
 
-        // Each label + card pair is packed together and centered vertically, mirroring the packed
-        // vertical chain (chainStyle="packed") of the previous MotionScene. The label sits inside a
-        // fixed-height slot so the card's position stays stable when PreviewAlphaAnimationBinder
-        // toggles the label between VISIBLE and GONE — otherwise the Column would shrink when the
-        // label disappears and the card would jump upward at the start of the sub-setting entry.
-        Box(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier =
-                    Modifier.align(Alignment.CenterStart).offset(x = lockOffsetX).width(cardWidth)
-            ) {
-                // Labels sit above the preview cards; their alpha/visibility is driven by
-                // PreviewAlphaAnimationBinder, so no alpha is applied here.
-                Box(modifier = Modifier.fillMaxWidth().height(labelBand)) {
-                    AndroidView(factory = { lockLabelView }, modifier = Modifier.fillMaxWidth())
+        Column(modifier = Modifier.fillMaxWidth()) {
+            // Each label + card pair is packed together and centered vertically, mirroring the
+            // packed vertical chain (chainStyle="packed") of the previous MotionScene. The label
+            // sits inside a fixed-height slot so the card's position stays stable when
+            // PreviewAlphaAnimationBinder toggles the label between VISIBLE and GONE — otherwise
+            // the Column would shrink when the label disappears and the card would jump upward at
+            // the start of the sub-setting entry.
+            Box(modifier = Modifier.fillMaxWidth().height(previewAreaHeight)) {
+                Column(
+                    modifier =
+                        Modifier.align(Alignment.CenterStart)
+                            .offset(x = lockOffsetX)
+                            .width(cardWidth)
+                ) {
+                    // Labels sit above the preview cards; their alpha/visibility is driven by
+                    // PreviewAlphaAnimationBinder, so no alpha is applied here.
+                    Box(modifier = Modifier.fillMaxWidth().height(labelBand)) {
+                        AndroidView(factory = { lockLabelView }, modifier = Modifier.fillMaxWidth())
+                    }
+                    AndroidView(
+                        factory = { lockPreviewCard },
+                        modifier = Modifier.fillMaxWidth().height(cardHeight),
+                    )
                 }
-                AndroidView(
-                    factory = { lockPreviewCard },
-                    modifier = Modifier.fillMaxWidth().height(cardHeight),
-                )
+
+                Column(
+                    modifier =
+                        Modifier.align(Alignment.CenterStart)
+                            .offset(x = homeOffsetX)
+                            .width(cardWidth)
+                ) {
+                    Box(modifier = Modifier.fillMaxWidth().height(labelBand)) {
+                        AndroidView(factory = { homeLabelView }, modifier = Modifier.fillMaxWidth())
+                    }
+                    AndroidView(
+                        factory = { homePreviewCard },
+                        modifier = Modifier.fillMaxWidth().height(cardHeight),
+                    )
+                }
             }
 
-            Column(
+            // The Wallpapers row lives below the previews inside the header. It fades and stops
+            // accepting input while entering the sub-setting so it doesn't compete visually with
+            // the centered preview.
+            WallpapersRow(
                 modifier =
-                    Modifier.align(Alignment.CenterStart).offset(x = homeOffsetX).width(cardWidth)
-            ) {
-                Box(modifier = Modifier.fillMaxWidth().height(labelBand)) {
-                    AndroidView(factory = { homeLabelView }, modifier = Modifier.fillMaxWidth())
-                }
-                AndroidView(
-                    factory = { homePreviewCard },
-                    modifier = Modifier.fillMaxWidth().height(cardHeight),
-                )
-            }
+                    Modifier.fillMaxWidth()
+                        .height(wallpapersRowHeight)
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                        .alpha((1f - p).coerceIn(0f, 1f)),
+                onClick = onWallpapersClick?.takeIf { p < 0.5f },
+            )
+        }
+    }
+}
+
+/**
+ * A row that mirrors the visual style of `EdithHomepageContent` (see Settings' HomepagePreference):
+ * a rounded surface-container pill with a 40dp leading icon, a title, and a circular trailing
+ * chevron badge. Tapping anywhere on the row triggers [onClick] when non-null.
+ */
+@Composable
+private fun WallpapersRow(modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
+    val shape = RoundedCornerShape(24.dp)
+    Row(
+        modifier =
+            modifier
+                .clip(shape)
+                .background(MaterialTheme.colorScheme.surfaceContainer, shape)
+                .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+                .heightIn(min = 56.dp)
+                .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // Leading icon. Matches HomepagePreference's iconVisible/icon slot: fixed 40dp box.
+        Box(
+            modifier = Modifier.padding(end = 10.dp).size(40.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_nav_wallpaper),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(24.dp),
+            )
+        }
+        Text(
+            text = stringResource(R.string.wallpapers),
+            modifier = Modifier.weight(1f).padding(start = 6.dp),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            fontWeight = FontWeight.Normal,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Box(
+            modifier =
+                Modifier.size(28.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+                    .padding(8.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_arrow_forward_24px),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

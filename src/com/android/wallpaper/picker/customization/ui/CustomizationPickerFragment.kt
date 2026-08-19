@@ -92,6 +92,7 @@ import com.android.wallpaper.picker.customization.ui.util.CustomizationOptionUti
 import com.android.wallpaper.picker.customization.ui.util.CustomizationOptionUtil.CustomizationOption
 import com.android.wallpaper.picker.customization.ui.util.CustomizationOptionViewUtil
 import com.android.wallpaper.picker.customization.ui.util.EmptyTransitionListener
+import com.android.wallpaper.picker.customization.ui.view.DeviceRadiusPreviewCardView
 import com.android.wallpaper.picker.customization.ui.view.PackThemeSuggestedChip
 import com.android.wallpaper.picker.customization.ui.view.PreviewPagerViews
 import com.android.wallpaper.picker.customization.ui.viewmodel.ColorUpdateViewModel
@@ -610,7 +611,8 @@ class CustomizationPickerFragment :
 
         // The two previews are shown side by side, so each is capped at half the width and its
         // height follows the display aspect ratio. Cap the expanded header at that fitted height so
-        // the previews fill the header without leaving a gap below them.
+        // the previews fill the header without leaving a gap below them. The Wallpapers row that
+        // the Compose pager renders below the previews is also included in the fitted height.
         val previewHeader: View = pickerMotionContainer.requireViewById(R.id.preview_header)
         val sideBySideHorizontalMargin =
             resources.getDimensionPixelSize(
@@ -623,9 +625,14 @@ class CustomizationPickerFragment :
         val screenAspectRatio =
             ScreenSizeCalculator.getInstance().getScreenAspectRatio(requireContext())
         val sideBySidePreviewHeight = (sideBySidePreviewWidth * screenAspectRatio).toInt()
+        val wallpapersRowHeight =
+            resources.getDimensionPixelSize(
+                R.dimen.customization_picker_preview_wallpapers_row_height
+            )
         val fittedExpandedHeaderHeight =
             sideBySidePreviewHeight +
                 previewLabelHeight +
+                wallpapersRowHeight +
                 previewHeader.paddingTop +
                 previewHeader.paddingBottom
 
@@ -1177,6 +1184,16 @@ class CustomizationPickerFragment :
                     homePreviewCard = previewPagerViews.homePreview,
                     viewModel = customizationPickerViewModel,
                     snapToCenteredOnEnter = snapToCenteredOnEnter.value,
+                    onWallpapersClick = {
+                        switchFragment(
+                            CategoriesFragment.newInstance(
+                                destinationScreen =
+                                    customizationPickerViewModel.selectedPreviewScreen.value,
+                                wallpaperLaunchSource =
+                                    arguments?.getString(WALLPAPER_LAUNCH_SOURCE) ?: "",
+                            )
+                        )
+                    },
                 )
             }
         }
@@ -1206,6 +1223,31 @@ class CustomizationPickerFragment :
             setColor = { color -> previewPagerViews.homePreviewShade.setBackgroundColor(color) },
             color = colorUpdateViewModel.colorSurfaceContainer,
             shouldAnimate = { previewPagerViews.homePreviewShade.alpha != 0F },
+            lifecycleOwner = viewLifecycleOwner,
+        )
+
+        // The selection outline drawn by DeviceRadiusPreviewCardView caches its Paint colour on
+        // construction using the dynamic system_primary; without an explicit binding it would keep
+        // the old accent until the app process is restarted after the user picks a new Colors
+        // theme. Push updates through the view so the outline recolors live.
+        val lockOutlineCard =
+            previewPagerViews.lockPreview.requireViewById<DeviceRadiusPreviewCardView>(
+                R.id.preview_card
+            )
+        val homeOutlineCard =
+            previewPagerViews.homePreview.requireViewById<DeviceRadiusPreviewCardView>(
+                R.id.preview_card
+            )
+        ColorUpdateBinder.bind(
+            setColor = { color -> lockOutlineCard.setSelectionOutlineColor(color) },
+            color = colorUpdateViewModel.colorPrimary,
+            shouldAnimate = { lockOutlineCard.isSelectionOutlined },
+            lifecycleOwner = viewLifecycleOwner,
+        )
+        ColorUpdateBinder.bind(
+            setColor = { color -> homeOutlineCard.setSelectionOutlineColor(color) },
+            color = colorUpdateViewModel.colorPrimary,
+            shouldAnimate = { homeOutlineCard.isSelectionOutlined },
             lifecycleOwner = viewLifecycleOwner,
         )
 
