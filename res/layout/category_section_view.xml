@@ -50,6 +50,7 @@
             android:id="@+id/more_photos_button"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:minHeight="@dimen/more_photos_button_height"
             android:layout_centerVertical="true"
             android:text="@string/more_photos"
             android:textColor="@color/system_on_primary"

@@ -66,9 +66,14 @@ class DefaultToolbarBinder @Inject constructor() : ToolbarBinder {
             lifecycleOwner = lifecycleOwner,
         )
 
+        // Tint the *current* foreground drawable whenever the color changes. The foreground is
+        // swapped between the back arrow and close icon below, so it must be tinted through the
+        // current reference rather than a one-shot drawable captured at bind time.
         ColorUpdateBinder.bind(
             setColor = { color ->
-                DrawableCompat.setTint(DrawableCompat.wrap(navButtonIcon.foreground), color)
+                navButtonIcon.foreground?.let {
+                    DrawableCompat.setTint(DrawableCompat.wrap(it), color)
+                }
             },
             color = colorUpdateViewModel.colorOnSurfaceVariant,
             shouldAnimate = { true },
