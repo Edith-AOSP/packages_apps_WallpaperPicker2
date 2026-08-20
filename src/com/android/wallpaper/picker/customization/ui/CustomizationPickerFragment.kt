@@ -16,6 +16,7 @@
 
 package com.android.wallpaper.picker.customization.ui
 
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
@@ -24,11 +25,13 @@ import android.os.Bundle
 import android.provider.Settings
 import android.stats.style.StyleEnums
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.SurfaceView
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewGroup.MarginLayoutParams
 import android.view.ViewStub
+import android.view.animation.PathInterpolator
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityNodeProvider
@@ -157,6 +160,21 @@ class CustomizationPickerFragment :
     private var previewPagerViews: PreviewPagerViews? = null
 
     /**
+     * Layout listener installed on the preview header that keeps the pager's `translationY` in
+     * sync with the header's actual measured height every layout pass. Retained here so it can be
+     * removed and re-attached when `updateHeaderHeightConstraints` recomputes the cached heights.
+     */
+    private var previewHeaderLayoutListener: View.OnLayoutChangeListener? = null
+
+    /**
+     * Matches the `motionInterpolator="cubic(0.2, 0, 0, 1)"` declared in
+     * `customization_picker_layout_scene.xml` for the primary transition. Used to interpolate the
+     * cached expanded/collapsed header heights so the pager translation follows the same visual
+     * curve as the header itself.
+     */
+    private val primaryTransitionInterpolator = PathInterpolator(0.2f, 0f, 0f, 1f)
+
+    /**
      * True when entering a customization option from the collapsed header, so the pager should
      * settle on the centered layout instantly instead of animating the shuffle.
      */
@@ -247,6 +265,7 @@ class CustomizationPickerFragment :
         }
     }
 
+    @SuppressLint("ClickableViewAccessibility")
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -316,6 +335,37 @@ class CustomizationPickerFragment :
                     }
                 }
             )
+        }
+
+        // Safety net for fast flings on the options list: MotionLayout's `OnSwipe onTouchUp=
+        // autoComplete` occasionally leaves the primary transition stuck at intermediate progress
+        // when the NestedScrollView consumes the fling before `ACTION_UP` reaches MotionLayout's
+        // swipe handler. The visible symptom is a dark band appearing between the (now-collapsed-
+        // looking) preview area and the top of the options list, because the header's height
+        // settled to an in-between value while the options list snapped to its own end. Watch
+        // touch events on the motion container without consuming them, and after every release
+        // resample `progress` after `STUCK_TRANSITION_CHECK_DELAY_MS`; if it hasn't moved and is
+        // still mid-transition, snap it to whichever primary state (expanded / collapsed) is
+        // nearer.
+        pickerMotionContainer.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_UP,
+                MotionEvent.ACTION_CANCEL -> {
+                    val sampledProgress = pickerMotionContainer.progress
+                    pickerMotionContainer.postDelayed(
+                        {
+                            finalizePrimaryTransitionIfStuck(
+                                pickerMotionContainer,
+                                referenceProgress = sampledProgress,
+                            )
+                        },
+                        STUCK_TRANSITION_CHECK_DELAY_MS,
+                    )
+                }
+            }
+            // Never consume: MotionLayout's own onTouchEvent still needs to see this to run
+            // autoComplete, and the NestedScrollView still needs to handle scrolling.
+            false
         }
         val optionContainer: ConstraintLayout =
             view.requireViewById(R.id.customization_option_container)
@@ -675,6 +725,28 @@ class CustomizationPickerFragment :
             } else {
                 0f
             }
+
+        // Keep the pager glued to the header bottom throughout every layout pass. During an active
+        // swipe-driven drag the header's height is re-measured on each frame; without this
+        // listener the pager's `translationY` is only updated in `onTransitionChange`, which can
+        // lag the header (linear progress vs. cubic-eased height, MotionLayout dispatching change
+        // callbacks slightly before/after layout, etc.). Binding the translation directly to the
+        // header's post-layout height makes drift impossible — whenever the header changes size,
+        // the pager slides by the exact same delta on the same frame.
+        previewHeaderLayoutListener?.let { previewHeader.removeOnLayoutChangeListener(it) }
+        val headerLayoutListener =
+            View.OnLayoutChangeListener { _, _, top, _, bottom, _, oldTop, _, oldBottom ->
+                if (expandedPreviewHeaderHeight == 0) return@OnLayoutChangeListener
+                val newHeight = bottom - top
+                val oldHeight = oldBottom - oldTop
+                if (newHeight == oldHeight) return@OnLayoutChangeListener
+                // Clamp to <= 0: if the header is somehow taller than the cached expanded height
+                // (shouldn't happen), leave the pager at rest rather than pushing it downward.
+                val delta = (newHeight - expandedPreviewHeaderHeight).coerceAtMost(0)
+                previewPager.translationY = delta.toFloat()
+            }
+        previewHeader.addOnLayoutChangeListener(headerLayoutListener)
+        previewHeaderLayoutListener = headerLayoutListener
     }
 
     private fun setMotionLayoutOnTransitionCompleteListener(
@@ -696,26 +768,32 @@ class CustomizationPickerFragment :
                     progress: Float,
                 ) {
                     if (expandedPreviewHeaderHeight == 0) return
-                    val previewHeader: View =
-                        view?.findViewById<View>(R.id.preview_header) ?: return
-                    val previewPager: View = previewHeader.findViewById(R.id.preview_pager)
-                    // Derive the translation from the header's actual current height rather than
-                    // interpolating progress linearly. The header height follows the transition's
-                    // cubic interpolator while progress is linear, so a progress-based translation
-                    // drifts out of sync and the pager overflows the header, causing the
-                    // SurfaceView
-                    // previews to bleed into the customization options below.
+                    val previewPager: View =
+                        view?.findViewById(R.id.preview_pager) ?: return
+                    // Derive the translation from the header's interpolated height between the
+                    // cached expanded/collapsed heights rather than from `previewHeader.height`,
+                    // which reflects the view's measured height only after layout and can be stale
+                    // during a fast swipe-driven `autoComplete`. Using the live height here was a
+                    // regression from the Compose migration: the read often returned the previous
+                    // frame's height, leaving the pager un-translated while the header clipped the
+                    // bottom — the previews then bled upward and a gap appeared above the
+                    // customization options. The cached values are guaranteed to be the final
+                    // expanded/collapsed heights, and interpolating them with the same cubic
+                    // curve the scene uses (`cubic(0.2, 0, 0, 1)`) matches the visual header curve
+                    // so the pager stays flush with the header bottom throughout the transition.
+                    val interpolatedHeaderHeight =
+                        interpolateHeaderHeight(progress = progress, startId = startId, endId = endId)
                     when {
                         startId == R.id.expanded_header_primary &&
                             endId == R.id.collapsed_header_primary ->
                             previewPager.translationY =
-                                (previewHeader.height - expandedPreviewHeaderHeight).toFloat()
+                                (interpolatedHeaderHeight - expandedPreviewHeaderHeight).toFloat()
                         startId == R.id.collapsed_header_primary && endId == R.id.secondary ->
                             previewPager.translationY =
-                                (previewHeader.height - expandedPreviewHeaderHeight).toFloat()
+                                (interpolatedHeaderHeight - expandedPreviewHeaderHeight).toFloat()
                         startId == R.id.secondary && endId == R.id.collapsed_header_primary ->
                             previewPager.translationY =
-                                (previewHeader.height - expandedPreviewHeaderHeight).toFloat()
+                                (interpolatedHeaderHeight - expandedPreviewHeaderHeight).toFloat()
                         startId == R.id.expanded_header_primary && endId == R.id.secondary ->
                             previewPager.translationY = 0f
                         startId == R.id.secondary && endId == R.id.expanded_header_primary ->
@@ -733,9 +811,8 @@ class CustomizationPickerFragment :
                             packThemeSuggestedChip?.animateToExpanded()
                         }
                     } else if (currentId == R.id.collapsed_header_primary) {
-                        val previewHeader: View = view?.findViewById(R.id.preview_header) ?: return
-                        previewHeader.findViewById<View>(R.id.preview_pager)?.translationY =
-                            (previewHeader.height - expandedPreviewHeaderHeight).toFloat()
+                        view?.findViewById<View>(R.id.preview_pager)?.translationY =
+                            (collapsedPreviewHeaderHeight - expandedPreviewHeaderHeight).toFloat()
                         // Do not collapse or expand the wallpaper entry when
                         // isLargeScreenSingleDisplayPortrait is true
                         if (!isLargeScreenSingleDisplayPortrait) {
@@ -781,6 +858,74 @@ class CustomizationPickerFragment :
                 }
             }
         )
+    }
+
+    /**
+     * Interpolates the preview header height for the active primary <-> collapsed transition using
+     * the cached expanded and collapsed heights and the same `cubic(0.2, 0, 0, 1)` curve the scene
+     * applies to the header's own height. This keeps the pager translation in sync with the visual
+     * header curve even when `previewHeader.height` is stale (which happens during fast swipe-
+     * driven `autoComplete` because the view's measured height is only updated after layout).
+     *
+     * Returns [expandedPreviewHeaderHeight] unchanged for transitions that don't affect the header
+     * height (e.g. primary <-> secondary), so callers can apply the result uniformly.
+     */
+    private fun interpolateHeaderHeight(progress: Float, startId: Int, endId: Int): Int {
+        val startHeight: Int
+        val endHeight: Int
+        when {
+            startId == R.id.expanded_header_primary &&
+                endId == R.id.collapsed_header_primary -> {
+                startHeight = expandedPreviewHeaderHeight
+                endHeight = collapsedPreviewHeaderHeight
+            }
+            startId == R.id.collapsed_header_primary &&
+                endId == R.id.expanded_header_primary -> {
+                startHeight = collapsedPreviewHeaderHeight
+                endHeight = expandedPreviewHeaderHeight
+            }
+            else -> return expandedPreviewHeaderHeight
+        }
+        if (startHeight == endHeight) return startHeight
+        val t = progress.coerceIn(0f, 1f)
+        val eased = primaryTransitionInterpolator.getInterpolation(t)
+        return startHeight + ((endHeight - startHeight) * eased).toInt()
+    }
+
+    /**
+     * Snaps the primary (`expanded_header_primary` <-> `collapsed_header_primary`) transition to
+     * whichever end is nearer if it was left mid-progress after a touch release. MotionLayout's
+     * `OnSwipe onTouchUp="autoComplete"` normally handles this, but when the anchor is a
+     * [androidx.core.widget.NestedScrollView] and the user releases mid-fling, the fling is
+     * consumed by the scroll view before MotionLayout's `onTouchEvent` sees `ACTION_UP`, so
+     * `autoComplete` never fires and the header stays parked at intermediate progress while the
+     * options list snaps to its own end — leaving a visible dark band between them.
+     *
+     * We only snap if progress hasn't moved since the touch release (i.e. autoComplete is not
+     * currently animating); otherwise MotionLayout will finish on its own. Only acts on the
+     * primary transition; the primary <-> secondary transitions are driven programmatically and
+     * shouldn't be touched here.
+     */
+    private fun finalizePrimaryTransitionIfStuck(
+        motionLayout: MotionLayout,
+        referenceProgress: Float,
+    ) {
+        val progress = motionLayout.progress
+        if (progress <= 0f || progress >= 1f) return
+        // autoComplete is animating if progress has moved since the touch release. Leave it.
+        if (kotlin.math.abs(progress - referenceProgress) > 0.001f) return
+        val startId = motionLayout.startState
+        val endId = motionLayout.endState
+        val isPrimary =
+            (startId == R.id.expanded_header_primary &&
+                endId == R.id.collapsed_header_primary) ||
+                (startId == R.id.collapsed_header_primary &&
+                    endId == R.id.expanded_header_primary)
+        if (!isPrimary) return
+        // Snap toward the nearer endpoint so the header lands on a terminal state and
+        // `onTransitionCompleted` fires with the correct `currentId`, which re-applies the pager
+        // translation and the bottom-scroll-view reset.
+        if (progress < 0.5f) motionLayout.transitionToStart() else motionLayout.transitionToEnd()
     }
 
     /** Only called when the first screen shown on the picker is a secondary screen. */
@@ -1504,6 +1649,13 @@ class CustomizationPickerFragment :
 
     companion object {
         private const val ANIMATION_DURATION = 200
+        // Delay after a touch release before checking whether the primary header transition was
+        // left mid-progress by a fling the NestedScrollView consumed. Long enough for
+        // MotionLayout's own `autoComplete` to have visibly moved `progress` (the scene's primary
+        // transition runs at ~400ms so 100ms captures ~25% travel — well outside the ~0.001
+        // stability threshold); short enough that a stuck header doesn't linger long enough for
+        // the user to notice.
+        private const val STUCK_TRANSITION_CHECK_DELAY_MS = 100L
     }
 
     private fun prepareFragmentExitTransitionAnimation() {
