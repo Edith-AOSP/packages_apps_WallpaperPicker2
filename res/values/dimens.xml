@@ -413,6 +413,8 @@
     <!-- Dimensions for the customization picker  -->
     <dimen name="customization_picker_preview_header_collapsed_height">250dp</dimen>
     <dimen name="customization_picker_preview_header_expanded_height">530dp</dimen>
+    <!-- Fixed preview area used by the Compose customization host. -->
+    <dimen name="customization_picker_compose_preview_height">490dp</dimen>
     <dimen name="customization_picker_min_preview_collapsed_height">70dp</dimen>
     <dimen name="customization_picker_min_preview_expanded_height">100dp</dimen>
     <dimen name="customization_picker_max_preview_expanded_height">580dp</dimen>

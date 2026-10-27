@@ -19,6 +19,8 @@ package com.android.wallpaper.picker.customization.ui.compose
 import android.view.View
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -49,8 +51,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -60,11 +63,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.android.wallpaper.R
+import com.android.wallpaper.model.Screen.HOME_SCREEN
 import com.android.wallpaper.model.Screen.LOCK_SCREEN
 import com.android.wallpaper.picker.customization.ui.viewmodel.CustomizationPickerViewModel2
 import com.android.wallpaper.picker.customization.ui.viewmodel.CustomizationPickerViewModel2.PickerScreen.CUSTOMIZATION_OPTION
 import com.android.wallpaper.util.ScreenSizeCalculator
-import kotlin.math.min
 
 /**
  * Compose replacement for the inner preview pager that was previously driven by a
@@ -108,6 +111,26 @@ fun PreviewPagerCompose(
     val screen by viewModel.screen.collectAsStateWithLifecycle()
 
     val isCentered = screen.first == CUSTOMIZATION_OPTION
+    val lockScale by
+        animateFloatAsState(
+            targetValue = if (isCentered && selectedScreen == LOCK_SCREEN) 1.12f else 1f,
+            animationSpec =
+                tween(
+                    durationMillis = if (isCentered) 500 else 150,
+                    easing = FastOutSlowInEasing,
+                ),
+            label = "lockPreviewScale",
+        )
+    val homeScale by
+        animateFloatAsState(
+            targetValue = if (isCentered && selectedScreen == HOME_SCREEN) 1.12f else 1f,
+            animationSpec =
+                tween(
+                    durationMillis = if (isCentered) 500 else 150,
+                    easing = FastOutSlowInEasing,
+                ),
+            label = "homePreviewScale",
+        )
 
     // progress: 0f = side-by-side (main), 1f = centered (sub-setting).
     val progress = remember { Animatable(if (isCentered) 1f else 0f) }
@@ -146,7 +169,6 @@ fun PreviewPagerCompose(
     // shared dimen.
     val wallpapersRowHeight =
         dimensionResource(R.dimen.customization_picker_preview_wallpapers_row_height)
-    val density = LocalDensity.current
     val context = LocalContext.current
     val screenAspectRatio = ScreenSizeCalculator.getInstance().getScreenAspectRatio(context)
     // Horizontal layout: each card is inset from the container edge by `outerMargin`, and the two
@@ -166,15 +188,10 @@ fun PreviewPagerCompose(
         // MotionScene constraints. The wallpapers row below is subtracted from the available
         // vertical space so nothing overlaps.
         val previewAreaHeight = (containerHeight - wallpapersRowHeight).coerceAtLeast(0.dp)
-        val availableHeight = (previewAreaHeight - labelBand).coerceAtLeast(0.dp)
         val maxCardWidth =
             ((containerWidth - outerMargin * 2 - halfGap * 2) / 2).coerceAtLeast(0.dp)
-        val maxCardWidthPx = with(density) { maxCardWidth.toPx() }
-        val availableHeightPx = with(density) { availableHeight.toPx() }
-        val cardWidthPx = min(maxCardWidthPx, (availableHeightPx / screenAspectRatio))
-        val cardHeightPx = cardWidthPx * screenAspectRatio
-        val cardWidth = with(density) { cardWidthPx.toDp() }
-        val cardHeight = with(density) { cardHeightPx.toDp() }
+        val cardWidth = maxCardWidth
+        val cardHeight = cardWidth * screenAspectRatio
 
         // Direction-aware transition. Both cards are driven by progress p (0f = side-by-side,
         // 1f = centered).
@@ -188,11 +205,14 @@ fun PreviewPagerCompose(
         // The two cards diverge (active toward center, inactive toward the far edge) so they never
         // overlap regardless of direction.
         //
-        // Side-by-side centers are computed from the symmetric outer margins so the pair stays
-        // centered with a fixed gap of `2 * halfGap`.
+        // Side-by-side centers are derived from the measured card width so the pair keeps a fixed
+        // `2 * halfGap` gap instead of spreading toward the container edges when the aspect-ratio
+        // fit makes the cards narrower.
         val centerX = containerWidth / 2
-        val lockSideX = outerMargin + cardWidth / 2
-        val homeSideX = containerWidth - outerMargin - cardWidth / 2
+        val pairGap = halfGap * 2
+        val pairStart = (containerWidth - (cardWidth * 2 + pairGap)) / 2
+        val lockSideX = pairStart + cardWidth / 2
+        val homeSideX = pairStart + cardWidth + pairGap + cardWidth / 2
         val lockOffX = -cardWidth / 2 // right edge at container start
         val homeOffX = containerWidth + cardWidth / 2 // left edge at container end
 
@@ -257,7 +277,14 @@ fun PreviewPagerCompose(
                     }
                     AndroidView(
                         factory = { lockPreviewCard },
-                        modifier = Modifier.fillMaxWidth().height(cardHeight),
+                        modifier =
+                            Modifier.fillMaxWidth()
+                                .height(cardHeight)
+                                .graphicsLayer {
+                                    scaleX = lockScale
+                                    scaleY = lockScale
+                                    transformOrigin = TransformOrigin(0.5f, 1f)
+                                },
                     )
                 }
 
@@ -272,21 +299,26 @@ fun PreviewPagerCompose(
                     }
                     AndroidView(
                         factory = { homePreviewCard },
-                        modifier = Modifier.fillMaxWidth().height(cardHeight),
+                        modifier =
+                            Modifier.fillMaxWidth()
+                                .height(cardHeight)
+                                .graphicsLayer {
+                                    scaleX = homeScale
+                                    scaleY = homeScale
+                                    transformOrigin = TransformOrigin(0.5f, 1f)
+                                },
                     )
                 }
             }
 
-            // The Wallpapers row lives below the previews inside the header. It fades and stops
-            // accepting input while entering the sub-setting so it doesn't compete visually with
-            // the centered preview. Its top/bottom gap matches the inter-preview-card gap
-            // (2 * halfGap).
+            // The Wallpapers row lives below the previews inside the header. The 12dp top and
+            // bottom insets keep the 56dp pill balanced between the previews and the options.
             WallpapersRow(
                 modifier =
                     Modifier.fillMaxWidth()
                         .height(wallpapersRowHeight)
-                        .padding(horizontal = 16.dp, vertical = halfGap * 2)
-                        .alpha((1f - p).coerceIn(0f, 1f)),
+                        .padding(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 12.dp)
+                        .alpha(((0.25f - p) / 0.25f).coerceIn(0f, 1f)),
                 onClick = onWallpapersClick?.takeIf { p < 0.5f },
             )
         }
@@ -305,7 +337,7 @@ private fun WallpapersRow(modifier: Modifier = Modifier, onClick: (() -> Unit)? 
         modifier =
             modifier
                 .clip(shape)
-                .background(MaterialTheme.colorScheme.surfaceContainer, shape)
+                .background(MaterialTheme.colorScheme.primaryContainer, shape)
                 .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
                 .heightIn(min = 56.dp)
                 .padding(horizontal = 16.dp),
@@ -319,7 +351,7 @@ private fun WallpapersRow(modifier: Modifier = Modifier, onClick: (() -> Unit)? 
             Icon(
                 painter = painterResource(R.drawable.ic_nav_wallpaper),
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurface,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer,
                 modifier = Modifier.size(24.dp),
             )
         }
@@ -329,19 +361,19 @@ private fun WallpapersRow(modifier: Modifier = Modifier, onClick: (() -> Unit)? 
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             fontWeight = FontWeight.Normal,
-            color = MaterialTheme.colorScheme.onSurface,
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
         )
         Box(
             modifier =
                 Modifier.size(28.dp)
-                    .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+                    .background(MaterialTheme.colorScheme.primary, CircleShape)
                     .padding(8.dp),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 painter = painterResource(R.drawable.ic_arrow_forward_24px),
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = MaterialTheme.colorScheme.onPrimary,
             )
         }
     }

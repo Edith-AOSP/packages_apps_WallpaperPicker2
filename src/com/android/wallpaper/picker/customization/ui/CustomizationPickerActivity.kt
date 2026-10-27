@@ -17,74 +17,115 @@
 package com.android.wallpaper.picker.customization.ui
 
 import android.annotation.TargetApi
-import android.app.ComponentCaller
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
-import android.graphics.Color
 import android.os.Bundle
 import android.util.Log
-import android.widget.FrameLayout
+import androidx.activity.addCallback
+import androidx.activity.compose.setContent
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowCompat
+import androidx.fragment.app.Fragment
+import androidx.fragment.app.FragmentContainerView
 import androidx.fragment.app.FragmentManager
+import androidx.fragment.app.commit
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import com.android.compose.theme.PlatformTheme
 import com.android.customization.picker.clock.ui.view.ClockViewFactory
+import com.android.customization.picker.icon.ui.util.IconStyleViewUtil
 import com.android.wallpaper.R
 import com.android.wallpaper.config.BaseFlags
 import com.android.wallpaper.module.DailyLoggingAlarmScheduler
 import com.android.wallpaper.module.MultiPanesChecker
 import com.android.wallpaper.module.logging.UserEventLogger
 import com.android.wallpaper.picker.AppbarFragment
+import com.android.wallpaper.picker.MyPhotosStarter
+import com.android.wallpaper.picker.category.ui.view.MyPhotosStarterImpl
+import com.android.wallpaper.picker.category.ui.view.providers.IndividualPickerFactory
 import com.android.wallpaper.picker.category.ui.viewmodel.CategoriesViewModel
 import com.android.wallpaper.picker.common.preview.data.repository.PersistentWallpaperModelRepository
-import com.android.wallpaper.picker.common.preview.ui.binder.WorkspaceCallbackBinder
-import com.android.wallpaper.picker.customization.ui.binder.ColorUpdateBinder
+import com.android.wallpaper.picker.common.preview.ui.binder.WorkspaceBinder
+import com.android.wallpaper.picker.customization.ui.binder.CustomizationOptionsBinder
+import com.android.wallpaper.picker.customization.ui.binder.PackThemeSuggestedEntryBinder
 import com.android.wallpaper.picker.customization.ui.binder.ToolbarBinder
+import com.android.wallpaper.picker.customization.ui.compose.CustomizationPickerScreen
+import com.android.wallpaper.picker.customization.ui.compose.CustomizationPickerUiState
+import com.android.wallpaper.picker.customization.ui.util.CustomizationOptionUtil
 import com.android.wallpaper.picker.customization.ui.util.CustomizationOptionViewUtil
 import com.android.wallpaper.picker.customization.ui.viewmodel.ColorUpdateViewModel
-import com.android.wallpaper.picker.customization.ui.viewmodel.CustomizationPickerViewModel2.Companion.KEY_DESTINATION
-import com.android.wallpaper.picker.customization.ui.viewmodel.CustomizationPickerViewModel2.Companion.KEY_SHORTCUT_SLOT_ID
-import com.android.wallpaper.picker.di.modules.BackgroundDispatcher
+import com.android.wallpaper.picker.customization.ui.viewmodel.CustomizationPickerViewModel2
 import com.android.wallpaper.picker.di.modules.MainDispatcher
+import com.android.wallpaper.picker.wallpapers.data.repository.CategoryWallpapersRepository
 import com.android.wallpaper.util.ActivityUtils
+import com.android.wallpaper.util.CuratedPhotosTimeUtil
 import com.android.wallpaper.util.DisplayUtils
 import com.android.wallpaper.util.LaunchSourceUtils.WALLPAPER_LAUNCH_SOURCE
-import com.android.wallpaper.util.converter.WallpaperModelFactory
 import com.android.wallpaper.util.wallpaperconnection.WallpaperConnectionUtils
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 
 @AndroidEntryPoint(AppCompatActivity::class)
 class CustomizationPickerActivity :
     Hilt_CustomizationPickerActivity(), AppbarFragment.AppbarFragmentHost {
 
     interface ActivityEnterAnimationCallback {
-        /**
-         * The callback is called when Fragment's parent Activity is the first time created and the
-         * enter animation is completed.
-         */
+        /** Called after the activity's enter animation completes on first creation. */
         fun onEnterAnimationCompleteAfterActivityCreated()
     }
 
     @Inject lateinit var multiPanesChecker: MultiPanesChecker
+    @Inject lateinit var customizationOptionsBinder: CustomizationOptionsBinder
+    @Inject lateinit var customizationOptionUtil: CustomizationOptionUtil
     @Inject lateinit var customizationOptionViewUtil: CustomizationOptionViewUtil
-    @Inject lateinit var workspaceCallbackBinder: WorkspaceCallbackBinder
+    @Inject lateinit var packThemeSuggestedEntryBinder: PackThemeSuggestedEntryBinder
     @Inject lateinit var toolbarBinder: ToolbarBinder
-    @Inject lateinit var wallpaperModelFactory: WallpaperModelFactory
+    @Inject lateinit var workspaceBinder: WorkspaceBinder
     @Inject lateinit var persistentWallpaperModelRepository: PersistentWallpaperModelRepository
     @Inject lateinit var displayUtils: DisplayUtils
-    @Inject @BackgroundDispatcher lateinit var backgroundScope: CoroutineScope
-    @Inject @MainDispatcher lateinit var mainScope: CoroutineScope
     @Inject lateinit var wallpaperConnectionUtils: WallpaperConnectionUtils
     @Inject lateinit var colorUpdateViewModel: ColorUpdateViewModel
     @Inject lateinit var clockViewFactory: ClockViewFactory
     @Inject lateinit var logger: UserEventLogger
+    @Inject lateinit var individualPickerFactory: IndividualPickerFactory
+    @Inject lateinit var categoryWallpapersRepository: CategoryWallpapersRepository
+    @Inject lateinit var myPhotosStarterImpl: MyPhotosStarterImpl
+    @Inject lateinit var curatedPhotosTimeUtil: CuratedPhotosTimeUtil
+    @Inject lateinit var iconStyleViewUtil: IconStyleViewUtil
+    @Inject @MainDispatcher lateinit var mainScope: CoroutineScope
 
     private var configuration: Configuration? = null
     private val categoriesViewModel: CategoriesViewModel by viewModels()
-    private var isInitialCreation = true
+    private val customizationPickerViewModel: CustomizationPickerViewModel2 by viewModels()
+    private val uiState = CustomizationPickerUiState()
+    private lateinit var legacyHost: CustomizationPickerLegacyHost
+    private val backStackChangedListener =
+        FragmentManager.OnBackStackChangedListener {
+            if (
+                supportFragmentManager.backStackEntryCount == 0 &&
+                    uiState.overlayVisible &&
+                    uiState.pendingFragment == null
+            ) {
+                uiState.overlayVisible = false
+            }
+        }
+
+    private val previewLauncher: ActivityResultLauncher<Intent> =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode == RESULT_OK) {
+                closeOverlay()
+            }
+        }
+
+    private val photoPickerLauncher: ActivityResultLauncher<Intent> =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {}
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -95,21 +136,13 @@ class CustomizationPickerActivity :
         if (intent != null) {
             logger.logAppLaunched(intent)
         }
-
-        if (savedInstanceState != null) {
-            // Activity is being restored, not initial creation
-            isInitialCreation = false
-        }
+        uiState.overlayVisible = savedInstanceState?.getBoolean(KEY_OVERLAY_VISIBLE) ?: false
 
         if (
             multiPanesChecker.isMultiPanesEnabled(this) &&
                 !ActivityUtils.isLaunchedFromSettingsTrampoline(intent) &&
                 !ActivityUtils.isLaunchedFromSettingsRelated(intent)
         ) {
-            // If the device supports multi panes, we check if the activity is launched by settings.
-            // If not, we need to start an intent to have settings launch the customization
-            // activity. In case it is a two-pane situation and the activity should be embedded in
-            // the settings app, instead of in the full screen.
             multiPanesChecker.getMultiPanesIntent(intent)?.let { multiPanesIntent ->
                 ActivityUtils.startActivityForResultSafely(
                     activity = this,
@@ -124,56 +157,102 @@ class CustomizationPickerActivity :
             finish()
             return
         }
+
         categoriesViewModel.initialize()
         configuration = Configuration(resources.configuration)
         colorUpdateViewModel.updateDarkModeAndColors()
         colorUpdateViewModel.setPreviewEnabled(!displayUtils.isLargeScreenOrUnfoldedDisplay(this))
+        bindWindowColors()
 
-        setContentView(R.layout.activity_cusomization_picker2)
         WindowCompat.setDecorFitsSystemWindows(window, ActivityUtils.isSUWMode(this))
+        installLegacyPlaceholderFragment()
+        supportFragmentManager.addOnBackStackChangedListener(backStackChangedListener)
 
-        ColorUpdateBinder.bind(
-            setColor = { color ->
-                requireViewById<FrameLayout>(R.id.fragment_container).setBackgroundColor(color)
-                window.statusBarColor = color
-                window.setStatusBarContrastEnforced(false)
-                WindowCompat.getInsetsController(window, window.decorView)
-                    .isAppearanceLightStatusBars = Color.luminance(color) > 0.5
-            },
-            color = colorUpdateViewModel.colorSurfaceContainer,
-            shouldAnimate = {
-                supportFragmentManager.findFragmentById(R.id.fragment_container) is
-                    CustomizationPickerFragment
-            },
-            lifecycleOwner = this,
-        )
+        legacyHost =
+            CustomizationPickerLegacyHost(
+                activity = this,
+                viewModel = customizationPickerViewModel,
+                colorUpdateViewModel = colorUpdateViewModel,
+                toolbarBinder = toolbarBinder,
+                customizationOptionsBinder = customizationOptionsBinder,
+                customizationOptionUtil = customizationOptionUtil,
+                customizationOptionViewUtil = customizationOptionViewUtil,
+                packThemeSuggestedEntryBinder = packThemeSuggestedEntryBinder,
+                workspaceBinder = workspaceBinder,
+                displayUtils = displayUtils,
+                wallpaperConnectionUtils = wallpaperConnectionUtils,
+                persistentWallpaperModelRepository = persistentWallpaperModelRepository,
+                multiPanesChecker = multiPanesChecker,
+                individualPickerFactory = individualPickerFactory,
+                categoryWallpapersRepository = categoryWallpapersRepository,
+                myPhotosStarterImpl = myPhotosStarterImpl,
+                photoPickerLauncher = photoPickerLauncher,
+                curatedPhotosTimeUtil = curatedPhotosTimeUtil,
+                userEventLogger = logger,
+                iconStyleViewUtil = iconStyleViewUtil,
+                clockViewFactory = clockViewFactory,
+                mainScope = mainScope,
+                callbacks =
+                    object : CustomizationPickerLegacyHost.Callbacks {
+                        override fun onBack() {
+                            onBackPressedDispatcher.onBackPressed()
+                        }
 
-        val fragment = supportFragmentManager.findFragmentById(R.id.fragment_container)
-        if (fragment == null) {
-            supportFragmentManager
-                .beginTransaction()
-                .add(
-                    R.id.fragment_container, // containerViewId
-                    CustomizationPickerFragment().apply {
-                        arguments =
-                            Bundle().apply {
-                                putString(
-                                    KEY_DESTINATION,
-                                    intent.extras?.getString(KEY_DESTINATION),
+                        override fun onShowFloatingSheet() {
+                            uiState.floatingSheetVisible = true
+                        }
+
+                        override fun onHideFloatingSheet() {
+                            uiState.floatingSheetVisible = false
+                        }
+
+                        override fun onOpenFragment(fragment: Fragment) {
+                            openFragment(fragment)
+                        }
+
+                        override fun launchForResult(intent: Intent) {
+                            previewLauncher.launch(intent)
+                        }
+                    },
+            )
+
+        // Bind while the preview views are detached so the SurfaceHolder callbacks are registered
+        // before Compose attaches the SurfaceViews.
+        legacyHost.bindPreview()
+
+        onBackPressedDispatcher.addCallback(this) {
+            when {
+                uiState.overlayVisible -> popOverlay()
+                legacyHost.handleBackPressed() -> Unit
+                else -> {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                    isEnabled = true
+                }
+            }
+        }
+
+        setContent {
+            PlatformTheme {
+                CustomizationPickerScreen(
+                    host = legacyHost,
+                    viewModel = customizationPickerViewModel,
+                    colorUpdateViewModel = colorUpdateViewModel,
+                    state = uiState,
+                    onWallpapersClick = {
+                        openFragment(
+                            com.android.wallpaper.picker.category.ui.view.CategoriesFragment
+                                .newInstance(
+                                    destinationScreen =
+                                        customizationPickerViewModel.selectedPreviewScreen.value,
+                                    wallpaperLaunchSource =
+                                        intent.extras?.getString(WALLPAPER_LAUNCH_SOURCE) ?: "",
                                 )
-                                putString(
-                                    KEY_SHORTCUT_SLOT_ID,
-                                    intent.extras?.getString(KEY_SHORTCUT_SLOT_ID),
-                                )
-                                putString(
-                                    WALLPAPER_LAUNCH_SOURCE,
-                                    intent.extras?.getString(WALLPAPER_LAUNCH_SOURCE),
-                                )
-                            }
-                    }, // fragment
-                    CUSTOMIZATION_PICKER_FRAGMENT_TAG, // tag
+                        )
+                    },
+                    onAttachOverlay = ::attachOverlay,
                 )
-                .commit()
+            }
         }
     }
 
@@ -184,13 +263,6 @@ class CustomizationPickerActivity :
 
     override fun onEnterAnimationComplete() {
         super.onEnterAnimationComplete()
-        if (isInitialCreation) {
-            val fragment =
-                supportFragmentManager.findFragmentById(R.id.fragment_container)
-                    as? CustomizationPickerFragment
-            fragment?.onEnterAnimationCompleteAfterActivityCreated()
-            isInitialCreation = false
-        }
     }
 
     override fun onUpArrowPressed() {
@@ -207,71 +279,104 @@ class CustomizationPickerActivity :
         super.onConfigurationChanged(newConfig)
         configuration?.let {
             val diff: Int = it.diff(newConfig)
-
-            val isAssetsPathsChange = diff and ActivityInfo.CONFIG_ASSETS_PATHS != 0
-            val isUiModeChange = diff and ActivityInfo.CONFIG_UI_MODE != 0
-            val isScreenSizeChange = diff and ActivityInfo.CONFIG_SCREEN_SIZE != 0
-
-            if (isUiModeChange) {
+            if (diff and ActivityInfo.CONFIG_UI_MODE != 0) {
                 colorUpdateViewModel.updateDarkModeAndColors()
-            } else if (isAssetsPathsChange) {
+            } else if (diff and ActivityInfo.CONFIG_ASSETS_PATHS != 0) {
                 colorUpdateViewModel.updateColors()
-            } else if (isScreenSizeChange) {
-                val fragment =
-                    supportFragmentManager.findFragmentByTag(CUSTOMIZATION_PICKER_FRAGMENT_TAG)
-                if (fragment is CustomizationPickerFragment && fragment.isAdded) {
-                    // Manually trigger CustomizationPickerFragment2 recreation to refresh the UI.
-                    // Since this Activity handles configuration changes manually, the Fragment's
-                    // view hierarchy isn't automatically destroyed. We must force a remove/add
-                    // cycle to trigger onCreateView, ensuring the wallpaper preview and other
-                    // UI elements recalculate their dimensions for the new screen size.
-                    val savedState = supportFragmentManager.saveFragmentInstanceState(fragment)
-                    supportFragmentManager.beginTransaction().remove(fragment).commitNow()
-                    val newFragment =
-                        CustomizationPickerFragment().apply { setInitialSavedState(savedState) }
-                    supportFragmentManager
-                        .beginTransaction()
-                        .add(
-                            R.id.fragment_container,
-                            newFragment,
-                            CUSTOMIZATION_PICKER_FRAGMENT_TAG,
-                        )
-                        .commitNow()
-                }
             }
         }
         configuration?.setTo(newConfig)
     }
 
-    override fun onActivityResult(
-        requestCode: Int,
-        resultCode: Int,
-        data: Intent?,
-        caller: ComponentCaller,
-    ) {
-        super.onActivityResult(requestCode, resultCode, data, caller)
-        if (
-            resultCode == RESULT_OK &&
-                (requestCode == PREVIEW_WALLPAPER_REQUEST_CODE ||
-                    requestCode == VIEW_ONLY_PREVIEW_WALLPAPER_REQUEST_CODE ||
-                    requestCode == PREVIEW_LIVE_WALLPAPER_REQUEST_CODE)
-        ) {
-            // Navigate back to the root fragment (CustomizationPickerFragment2)
-            val fragmentManager: FragmentManager = supportFragmentManager
-            // Pop all the fragments until the root fragment
-            fragmentManager.popBackStack(null, FragmentManager.POP_BACK_STACK_INCLUSIVE)
-            // Ensure the root fragment is CUSTOMIZATION_PICKER_FRAGMENT_TAG
-            if (fragmentManager.findFragmentByTag(CUSTOMIZATION_PICKER_FRAGMENT_TAG) == null) {
-                fragmentManager
-                    .beginTransaction()
-                    .replace(
-                        R.id.fragment_container, // containerViewId
-                        CustomizationPickerFragment(), // fragment
-                        CUSTOMIZATION_PICKER_FRAGMENT_TAG, // tag
-                    )
-                    .commit()
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean(KEY_OVERLAY_VISIBLE, uiState.overlayVisible)
+        super.onSaveInstanceState(outState)
+    }
+
+    override fun onDestroy() {
+        supportFragmentManager.removeOnBackStackChangedListener(backStackChangedListener)
+        if (this::legacyHost.isInitialized) {
+            legacyHost.disconnect()
+        }
+        super.onDestroy()
+    }
+
+    private fun bindWindowColors() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                colorUpdateViewModel.colorSurfaceContainer.collect { color ->
+                    window.statusBarColor = color
+                    window.setStatusBarContrastEnforced(false)
+                    window.navigationBarColor = android.graphics.Color.TRANSPARENT
+                    window.setNavigationBarContrastEnforced(false)
+                    WindowCompat.getInsetsController(window, window.decorView)
+                        .isAppearanceLightStatusBars =
+                        android.graphics.Color.luminance(color) > 0.5f
+                    WindowCompat.getInsetsController(window, window.decorView)
+                        .isAppearanceLightNavigationBars =
+                        android.graphics.Color.luminance(color) > 0.5f
+                }
             }
         }
+    }
+
+    private fun installLegacyPlaceholderFragment() {
+        val fragment = supportFragmentManager.findFragmentByTag(CUSTOMIZATION_PICKER_FRAGMENT_TAG)
+        if (fragment is CustomizationPickerPlaceholderFragment) return
+        if (fragment != null) {
+            supportFragmentManager
+                .beginTransaction()
+                .remove(fragment)
+                .commitNowAllowingStateLoss()
+        }
+        supportFragmentManager
+            .beginTransaction()
+            .add(CustomizationPickerPlaceholderFragment(), CUSTOMIZATION_PICKER_FRAGMENT_TAG)
+            .commitNowAllowingStateLoss()
+    }
+
+    private fun openFragment(fragment: Fragment) {
+        if (uiState.overlayVisible) {
+            supportFragmentManager.commit {
+                setReorderingAllowed(true)
+                replace(R.id.fragment_container, fragment)
+                addToBackStack(null)
+            }
+        } else {
+            uiState.pendingFragment = fragment
+            uiState.overlayVisible = true
+        }
+    }
+
+    private fun attachOverlay(container: FragmentContainerView) {
+        if (!uiState.overlayVisible) return
+        val fragment = uiState.pendingFragment ?: return
+        if (!container.isAttachedToWindow) {
+            container.post { attachOverlay(container) }
+            return
+        }
+        uiState.pendingFragment = null
+        if (supportFragmentManager.findFragmentById(R.id.fragment_container) != null) return
+        supportFragmentManager.commit {
+            setReorderingAllowed(true)
+            replace(container.id, fragment)
+            addToBackStack(null)
+        }
+    }
+
+    private fun popOverlay() {
+        if (supportFragmentManager.backStackEntryCount > 1) {
+            supportFragmentManager.popBackStack()
+        } else {
+            closeOverlay()
+        }
+    }
+
+    private fun closeOverlay() {
+        supportFragmentManager.popBackStack(null, FragmentManager.POP_BACK_STACK_INCLUSIVE)
+        uiState.pendingFragment = null
+        uiState.overlayVisible = false
+        uiState.floatingSheetVisible = false
     }
 
     private fun enforcePortraitForHandheldAndFoldedDisplay() {
@@ -284,7 +389,11 @@ class CustomizationPickerActivity :
         }
     }
 
+    /** Compatibility fragment for state saved by the first Compose host build. */
+    class PlaceholderFragment : Fragment()
+
     companion object {
+        private const val KEY_OVERLAY_VISIBLE = "customization_overlay_visible"
         const val CUSTOMIZATION_PICKER_FRAGMENT_TAG = "customization_picker_fragment"
         const val PREVIEW_LIVE_WALLPAPER_REQUEST_CODE = 4
         const val VIEW_ONLY_PREVIEW_WALLPAPER_REQUEST_CODE = 2

@@ -74,7 +74,7 @@ class CustomizationPickerActivityTest {
     fun launchSuccess() {
         ActivityScenario.launch(CustomizationPickerActivity::class.java)
 
-        onView(withId(R.id.preview_header)).check(matches(isDisplayed()))
+        onView(withId(R.id.lock_preview)).check(matches(isDisplayed()))
     }
 
     @Test
