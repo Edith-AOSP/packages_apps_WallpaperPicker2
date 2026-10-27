@@ -452,10 +452,9 @@ class CustomizationPickerLegacyHost(
                 hideFloatingSheet()
                 if (hasSecondaryScreen) {
                     hasSecondaryScreen = false
-                    activity.window.decorView.postDelayed(
-                        { viewModel.customizationOptionsViewModel.resetPreview() },
-                        PRIMARY_TRANSITION_MS,
-                    )
+                    // Preview state is reset immediately so a fast exit cannot skip the reset and
+                    // leave the homescreen preview on the discarded palette.
+                    viewModel.customizationOptionsViewModel.resetPreview()
                 }
             },
             navigateToSecondary = { option ->
@@ -610,7 +609,6 @@ class CustomizationPickerLegacyHost(
     private companion object {
         const val OPTIONS_BOTTOM_PADDING_DP = 16
         const val OPTIONS_TOP_CORNER_RADIUS_DP = 28
-        const val PRIMARY_TRANSITION_MS = 350L
         const val FLOATING_SHEET_TRANSITION_MS = 500L
     }
 }

@@ -20,6 +20,7 @@ import android.graphics.Color
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -43,6 +44,8 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -121,6 +124,8 @@ fun CustomizationPickerScreen(
                     modifier = Modifier.fillMaxWidth().statusBarsPadding(),
                 )
 
+                Spacer(modifier = Modifier.height(12.dp))
+
                 PreviewPagerCompose(
                     lockLabelView = previewViews.lockPreviewLabelContainer,
                     homeLabelView = previewViews.homePreviewLabelContainer,
@@ -131,15 +136,33 @@ fun CustomizationPickerScreen(
                     modifier = Modifier.fillMaxWidth().height(previewHeight),
                 )
 
-                AndroidView(
-                    factory = { optionsView },
-                    modifier =
-                        Modifier.fillMaxWidth()
-                            .weight(1f)
-                            .padding(horizontal = 16.dp)
-                            .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
-                            .alpha(if (state.floatingSheetVisible) 0f else 1f),
-                )
+                Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                    AndroidView(
+                        factory = { optionsView },
+                        modifier =
+                            Modifier.fillMaxSize()
+                                .padding(horizontal = 16.dp)
+                                .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
+                                .alpha(if (state.floatingSheetVisible) 0f else 1f),
+                    )
+                    if (state.floatingSheetVisible) {
+                        // The options sheet is a legacy AndroidView. This Compose layer consumes
+                        // touches on transparent floating-sheet areas so they do not reach the
+                        // preferences underneath.
+                        Box(
+                            modifier =
+                                Modifier.fillMaxSize().pointerInput(Unit) {
+                                    awaitPointerEventScope {
+                                        while (true) {
+                                            awaitPointerEvent(PointerEventPass.Final)
+                                                .changes
+                                                .forEach { it.consume() }
+                                        }
+                                    }
+                                }
+                        )
+                    }
+                }
             }
 
             if (!state.floatingSheetVisible) {
@@ -158,16 +181,19 @@ fun CustomizationPickerScreen(
                 )
             }
 
-            if (state.floatingSheetVisible) {
-                AndroidView(
-                    factory = { host.floatingSheetContainer },
-                    modifier =
-                        Modifier.align(Alignment.BottomCenter)
-                            .fillMaxWidth()
-                            .background(MaterialTheme.colorScheme.surfaceContainer)
-                            .navigationBarsPadding(),
-                )
-            }
+            AndroidView(
+                factory = { host.floatingSheetContainer },
+                update = { view ->
+                    view.visibility =
+                        if (state.floatingSheetVisible) android.view.View.VISIBLE
+                        else android.view.View.GONE
+                },
+                modifier =
+                    Modifier.align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surfaceContainer)
+                        .navigationBarsPadding(),
+            )
 
             if (state.overlayVisible) {
                 AndroidView(
