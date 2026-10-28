@@ -183,8 +183,26 @@ constructor(
     val themedIconColor = createColorFlow(R.color.themed_icon_color, null)
     val themedIconBackgroundColor = createColorFlow(R.color.themed_icon_background_color, null)
 
-    fun previewColors(@ColorInt colorSeed: Int, @ThemeStyle.Type style: Int, isDarkMode: Boolean) {
-        previewingColorScheme.value = ColorScheme(colorSeed, isDarkMode, style).materialScheme
+    fun previewColors(
+        @ColorInt colorSeed: Int,
+        @ThemeStyle.Type style: Int,
+        isDarkMode: Boolean,
+        accentSaturation: Int = 100,
+        backgroundSaturation: Int = 100,
+        backgroundLightness: Int = 100,
+        accurateShades: Boolean = true,
+    ) {
+        previewingColorScheme.value =
+            ColorScheme(
+                    colorSeed,
+                    isDarkMode,
+                    style,
+                    accentSaturation,
+                    backgroundSaturation,
+                    backgroundLightness,
+                    accurateShades,
+                )
+                .materialScheme
         previewingIsDarkMode.value = isDarkMode
     }
 
