@@ -164,7 +164,9 @@ class CustomizationPickerActivity :
         colorUpdateViewModel.setPreviewEnabled(!displayUtils.isLargeScreenOrUnfoldedDisplay(this))
         bindWindowColors()
 
-        WindowCompat.setDecorFitsSystemWindows(window, ActivityUtils.isSUWMode(this))
+        // Match the pre-Compose picker: lay the content out behind both bars and let the
+        // surface-container background own the area behind the navigation bar.
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         installLegacyPlaceholderFragment()
         supportFragmentManager.addOnBackStackChangedListener(backStackChangedListener)
 
@@ -307,13 +309,8 @@ class CustomizationPickerActivity :
                 colorUpdateViewModel.colorSurfaceContainer.collect { color ->
                     window.statusBarColor = color
                     window.setStatusBarContrastEnforced(false)
-                    window.navigationBarColor = android.graphics.Color.TRANSPARENT
-                    window.setNavigationBarContrastEnforced(false)
                     WindowCompat.getInsetsController(window, window.decorView)
                         .isAppearanceLightStatusBars =
-                        android.graphics.Color.luminance(color) > 0.5f
-                    WindowCompat.getInsetsController(window, window.decorView)
-                        .isAppearanceLightNavigationBars =
                         android.graphics.Color.luminance(color) > 0.5f
                 }
             }

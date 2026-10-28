@@ -147,12 +147,26 @@ class CustomizationPickerLegacyHost(
     val optionsHostView: View by lazy {
         inflater.inflate(R.layout.compose_customization_options, null).also { root ->
             root.requireViewById<View>(R.id.home_customization_option_container).isInvisible = true
+            val scroll = root.requireViewById<NestedScrollView>(R.id.customization_options_scroll_view)
+            ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+                val navBarBottom =
+                    insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+                scroll.setPadding(
+                    scroll.paddingLeft,
+                    scroll.paddingTop,
+                    scroll.paddingRight,
+                    navBarBottom +
+                        (OPTIONS_BOTTOM_PADDING_DP * view.resources.displayMetrics.density)
+                            .toInt(),
+                )
+                insets
+            }
+            root.requestApplyInsets()
             root.requireViewById<View>(R.id.customization_option_container).apply {
                 // Compose owns the horizontal inset so the top clip starts at the same edge as
                 // the preference cards.
                 setPadding(0, paddingTop, 0, paddingBottom)
             }
-            val scroll = root.requireViewById<NestedScrollView>(R.id.customization_options_scroll_view)
             scroll.clipToOutline = true
             scroll.outlineProvider =
                 object : ViewOutlineProvider() {
@@ -173,21 +187,6 @@ class CustomizationPickerLegacyHost(
                         outline.setPath(path)
                     }
                 }
-            ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
-                val navBarBottom =
-                    insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
-                val bottomPadding =
-                    navBarBottom +
-                        (OPTIONS_BOTTOM_PADDING_DP * view.resources.displayMetrics.density).toInt()
-                scroll.setPadding(
-                    scroll.paddingLeft,
-                    scroll.paddingTop,
-                    scroll.paddingRight,
-                    bottomPadding,
-                )
-                insets
-            }
-            root.requestApplyInsets()
             ColorUpdateBinder.bind(
                 setColor = { color -> root.setBackgroundColor(color) },
                 color = colorUpdateViewModel.colorSurfaceContainer,
@@ -208,6 +207,7 @@ class CustomizationPickerLegacyHost(
 
     private var previewBound = false
     private var hasSecondaryScreen = false
+    private var currentSheetContent: View? = null
 
     fun bindPreview() {
         if (previewBound) return
@@ -585,11 +585,15 @@ class CustomizationPickerLegacyHost(
     private fun showFloatingSheet(option: CustomizationOption, content: View?) {
         if (content == null) return
         hasSecondaryScreen = true
-        floatingSheetContainer.removeAllViews()
-        floatingSheetContainer.addView(content)
+        if (currentSheetContent !== content) {
+            floatingSheetContainer.removeAllViews()
+            floatingSheetContainer.addView(content)
+            currentSheetContent = content
+        }
         floatingSheetContainer.visibility = View.VISIBLE
         floatingSheetContainer.alpha = 1f
         floatingSheetContainer.translationY = 0f
+        floatingSheetContainer.requestLayout()
         callbacks.onShowFloatingSheet()
         userEventLogger.logEnterScreen(
             userEventLogger.transformCustomizationOptionToScreenForLogging(option)
@@ -601,7 +605,8 @@ class CustomizationPickerLegacyHost(
     }
 
     private fun hideFloatingSheet() {
-        floatingSheetContainer.removeAllViews()
+        // The current sheet stays attached while hidden so its Compose tree survives between
+        // openings.
         floatingSheetContainer.visibility = View.GONE
         callbacks.onHideFloatingSheet()
     }

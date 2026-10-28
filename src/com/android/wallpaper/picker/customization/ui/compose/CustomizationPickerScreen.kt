@@ -25,9 +25,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -42,7 +39,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -109,9 +105,6 @@ fun CustomizationPickerScreen(
             primary = androidx.compose.ui.graphics.Color(primary),
             onPrimary = androidx.compose.ui.graphics.Color(onPrimary),
         )
-    val navBarBottom =
-        WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-
     LaunchedEffect(Unit) { host.bindOptions() }
 
     MaterialTheme(colorScheme = previewScheme) {
@@ -124,7 +117,7 @@ fun CustomizationPickerScreen(
                     modifier = Modifier.fillMaxWidth().statusBarsPadding(),
                 )
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(20.dp))
 
                 PreviewPagerCompose(
                     lockLabelView = previewViews.lockPreviewLabelContainer,
@@ -165,22 +158,6 @@ fun CustomizationPickerScreen(
                 }
             }
 
-            if (!state.floatingSheetVisible) {
-                Box(
-                    modifier =
-                        Modifier.align(Alignment.BottomCenter)
-                            .fillMaxWidth()
-                            .height(navBarBottom + 28.dp)
-                            .background(
-                                Brush.verticalGradient(
-                                    0f to androidx.compose.ui.graphics.Color.Transparent,
-                                    0.45f to androidx.compose.ui.graphics.Color.Transparent,
-                                    1f to MaterialTheme.colorScheme.surfaceContainer,
-                                )
-                            )
-                )
-            }
-
             AndroidView(
                 factory = { host.floatingSheetContainer },
                 update = { view ->
@@ -191,8 +168,15 @@ fun CustomizationPickerScreen(
                 modifier =
                     Modifier.align(Alignment.BottomCenter)
                         .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.surfaceContainer)
-                        .navigationBarsPadding(),
+                        .then(
+                            if (state.floatingSheetVisible) {
+                                Modifier
+                                    .background(MaterialTheme.colorScheme.surfaceContainer)
+                                    .navigationBarsPadding()
+                            } else {
+                                Modifier
+                            }
+                        ),
             )
 
             if (state.overlayVisible) {
